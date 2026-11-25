@@ -15,6 +15,7 @@
   fontconfig,
   pango,
   nodejs,
+  cacert,
   lmdb,
   curl,
   libxslt,
@@ -49,7 +50,10 @@ let
     inherit src;
     sourceRoot = "${src.name}/contrib/setup";
 
-    nativeBuildInputs = [ nodejs ];
+    nativeBuildInputs = [
+      nodejs
+      cacert
+    ];
 
     buildPhase = ''
       export HOME=$(mktemp -d)
