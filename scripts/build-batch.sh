@@ -147,6 +147,14 @@ if (( NEXT < TOTAL )); then
 fi
 
 # Pass complete: export, and drop results for packages no longer listed.
+# `process` skips exporting when a batch has nothing new with metadata, so
+# export the whole section from the database here.
+pushd workspace
+[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::appstream-generator publish output"
+unbuffer appstream-generator publish nixpkgs --verbose 2>&1 | tee -a appstream-generator.log
+[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::endgroup::"
+popd
+
 EXPORT="workspace/export/data/nixpkgs/$REV"
 if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
   {
