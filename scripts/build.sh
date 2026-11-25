@@ -8,7 +8,8 @@ REV=$(nix flake metadata nixpkgs/$SECTION --json | jq '.revision' -r)
 ENABLE_NAR_CACHE="${ENABLE_NAR_CACHE:-true}"
 
 if [[ "$ENABLE_NAR_CACHE" == "true" ]]; then
-  ARCHIVE_ROOT="https://cache.nixos.org?local-nar-cache=./narcache"
+  # Nix needs an absolute path here.
+  ARCHIVE_ROOT="https://cache.nixos.org?local-nar-cache=$(pwd)/workspace/narcache"
 else
   ARCHIVE_ROOT="https://cache.nixos.org"
 fi

@@ -27,10 +27,17 @@ BATCH_SIZE="${BATCH_SIZE:-2000}"
 APP_SETS="${APP_SETS:-kdePackages pantheon lxqt enlightenment}"
 ENABLE_NAR_CACHE="${ENABLE_NAR_CACHE:-true}"
 
-mkdir -p workspace
+mkdir -p workspace/nix-index
 WS="$(pwd)/workspace"
 STATE="$WS/batch-state"
 PASS="$WS/pass"
+
+# The generator writes "{}" as the listing of a store path it fails to list
+# (it drops nix's error) and never lists that path again.
+failed_listings() {
+  find "$WS/nix-index" -maxdepth 1 -name '*.json' -size -8c -print0 \
+    | xargs -0r grep -lxF -e '{}' || true
+}
 
 # "<revision> <attrs done>" while a pass is under way.
 if [[ -f "$STATE" ]]; then
@@ -58,6 +65,7 @@ status_lines() {
   echo "  Already processed: $1 of $TOTAL"
   echo "  This run:          $(( NEXT - DONE )) (attrs $(( DONE + 1 ))..$NEXT)"
   echo "  Still to process:  $(( TOTAL - $1 ))"
+  echo "  Failed listings:   $(failed_listings | wc -l) (retried next run)"
   # Apparent size, as tar stores it: the LMDB file may be sparse.
   echo "  Workspace size:    $(du -sh --apparent-size "$WS" | cut -f1) (uncompressed)"
   # The repo's whole Actions cache; GitHub updates this figure with a delay.
@@ -97,11 +105,14 @@ mkdir -p "$PKGROOT"
 jq -cs '{version: 2, packages: add}' "$PASS"/batch-*.json > "$PKGROOT/packages.json"
 
 # Store path listings never change, so they are shared across revisions.
-mkdir -p "$WS/nix-index"
+# Failed ones are listed again.
+failed_listings | xargs -r rm -f
 ln -sfn "$WS/nix-index" "$PKGROOT/index"
 
 if [[ "$ENABLE_NAR_CACHE" == "true" ]]; then
-  ARCHIVE_ROOT="https://cache.nixos.org?local-nar-cache=./narcache"
+  # Nix needs an absolute path here; with a relative one every
+  # `nix store ls` and `nix store cat` fails, and nothing is processed.
+  ARCHIVE_ROOT="https://cache.nixos.org?local-nar-cache=$WS/narcache"
 else
   ARCHIVE_ROOT="https://cache.nixos.org"
 fi

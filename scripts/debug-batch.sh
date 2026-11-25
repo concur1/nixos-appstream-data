@@ -34,7 +34,7 @@ ln -sfn "$WS/nix-index" "$PKGROOT/index"
 cat > "$WS/asgen-config.json" << JSON
 {
   "ProjectName": "Nix",
-  "ArchiveRoot": "https://cache.nixos.org",
+  "ArchiveRoot": "https://cache.nixos.org?local-nar-cache=$WS/narcache",
   "Backend": "nix",
   "Features": {
     "processDesktop": true,
