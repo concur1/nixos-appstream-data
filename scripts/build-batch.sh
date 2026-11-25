@@ -147,10 +147,21 @@ if (( NEXT < TOTAL )); then
 fi
 
 # Pass complete: export, and drop results for packages no longer listed.
+EXPORT="workspace/export/data/nixpkgs/$REV"
+if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
+  {
+    echo "No catalogue in $EXPORT; appstream/$SECTION is unchanged."
+    echo "workspace/export holds:"
+    find workspace/export -maxdepth 4 || true
+    echo "End of workspace/appstream-generator.log:"
+    tail -n 60 workspace/appstream-generator.log
+  } >&2
+  exit 1
+fi
 rm -rf appstream/"$SECTION"
 mkdir -p appstream/"$SECTION"
-cp workspace/export/data/nixpkgs/"$REV"/Components*.gz appstream/"$SECTION"/
-cp workspace/export/data/nixpkgs/"$REV"/icons* appstream/"$SECTION"/
+cp "$EXPORT"/Components*.gz appstream/"$SECTION"/
+cp "$EXPORT"/icons* appstream/"$SECTION"/
 
 for f in appstream/"$SECTION"/Components*.gz; do
   gunzip "$f"
