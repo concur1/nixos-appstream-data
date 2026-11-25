@@ -51,7 +51,15 @@ if [[ "$DONE" == 0 ]]; then
 fi
 TOTAL=$(wc -l < "$PASS/attrs.txt")
 NEXT=$(( DONE + BATCH_SIZE < TOTAL ? DONE + BATCH_SIZE : TOTAL ))
-echo "nixpkgs $REV: attrs $DONE..$NEXT of $TOTAL"
+
+# Progress through the pass, counted in attrs; $1 is how many are done.
+status() {
+  echo "== $2: nixpkgs $REV =="
+  echo "  Already processed: $1 of $TOTAL"
+  echo "  This run:          $(( NEXT - DONE )) (attrs $(( DONE + 1 ))..$NEXT)"
+  echo "  Still to process:  $(( TOTAL - $1 ))"
+}
+status "$DONE" "Before"
 
 # This batch's packages, listed the way the generator lists them.
 BATCH="$PASS/batch-$(printf '%06d' "$DONE").json"
@@ -111,9 +119,10 @@ unbuffer appstream-generator process nixpkgs --verbose 2>&1 | tee appstream-gene
 rm -rf narcache
 popd
 
+status "$NEXT" "After"
+
 if (( NEXT < TOTAL )); then
   echo "$REV $NEXT" > "$STATE"
-  echo "Batch done; $(( TOTAL - NEXT )) attrs left in this pass."
   exit 0
 fi
 
