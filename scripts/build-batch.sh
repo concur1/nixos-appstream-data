@@ -53,7 +53,7 @@ TOTAL=$(wc -l < "$PASS/attrs.txt")
 NEXT=$(( DONE + BATCH_SIZE < TOTAL ? DONE + BATCH_SIZE : TOTAL ))
 
 # Progress through the pass, counted in attrs; $1 is how many are done.
-status() {
+status_lines() {
   echo "== $2: nixpkgs $REV =="
   echo "  Already processed: $1 of $TOTAL"
   echo "  This run:          $(( NEXT - DONE )) (attrs $(( DONE + 1 ))..$NEXT)"
@@ -65,6 +65,15 @@ status() {
     gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" \
       --jq '"  Actions cache:     \(.active_caches_size_in_bytes / 1e7 | floor / 100) GB in \(.active_caches_count) entries (limit 10 GB by default)"' \
       || echo "  Actions cache:     usage not available"
+  fi
+}
+# Also onto the run's summary page in GitHub Actions, as the log is long.
+status() {
+  local lines
+  lines=$(status_lines "$@")
+  echo "$lines"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '```\n%s\n```\n' "$lines" >> "$GITHUB_STEP_SUMMARY"
   fi
 }
 status "$DONE" "Before"
@@ -122,7 +131,10 @@ cat > "$WS/asgen-config.json" << JSON
 JSON
 
 pushd workspace
+# Collapsed in the Actions log; the whole output is also in the uploaded log.
+[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::appstream-generator output"
 unbuffer appstream-generator process nixpkgs --verbose 2>&1 | tee appstream-generator.log
+[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::endgroup::"
 # Later batches don't read these archives again.
 rm -rf narcache
 popd
