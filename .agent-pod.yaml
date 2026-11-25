@@ -1,0 +1,21 @@
+# Read access to GitHub, for debugging the Actions workflow from the sandbox:
+# repo contents, runs, job logs and artifacts.
+
+network:
+  allow:
+    # git over HTTPS and the REST API (gh)
+    - github.com
+    - api.github.com
+    - codeload.github.com
+    - objects.githubusercontent.com
+    # Job logs and artifact downloads redirect to these
+    - "*.actions.githubusercontent.com"
+    - "*.blob.core.windows.net"
+
+passthrough_envs:
+  - name: GH_TOKEN
+    description: Read-only GitHub token (contents, actions) for gh and the REST API
+
+extra_packages:
+  - gh
+  - jq
