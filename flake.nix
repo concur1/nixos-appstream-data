@@ -18,33 +18,36 @@
       forAllSupportedSystems = nixpkgs.lib.genAttrs supportedSystems;
 
       overlay = final: prev: {
-        appstream = prev.appstream.overrideAttrs (old: rec {
-          version = "1.1.2";
-          src = prev.fetchFromGitHub {
-            owner = "ximion";
-            repo = "appstream";
-            rev = "v${version}";
-            sha256 = "sha256-tvdWWdL6PthffAZZnNZ3+17/eJdZFx8xFkqm7IvyPWE=";
-          };
-          patches = final.lib.init old.patches;
-          buildInputs =
-            old.buildInputs
-            ++ (with prev; [
-              libfyaml
-              bash-completion
-            ]);
-        });
-        inja = prev.inja.overrideAttrs (old: {
-          patches = [
-            # https://github.com/pantor/inja/pull/317
-            (prev.fetchpatch {
-              name = "cmake-install-pc.patch";
-              url = "https://github.com/pantor/inja/commit/ebb7aeb3ae49ccb49a642aaecb0d41483078b8bd.patch";
-              hash = "sha256-Cz0EbYwGwFcfhKd8lJzXDy2DpMAcHkz7EC/vVFV60c0=";
-            })
-          ];
-        });
-        appstream-generator = final.callPackage ./appstream-generator.nix { };
+        # Only for the generator: overriding appstream for all of nixpkgs
+        # changes libadwaita, ffmpeg and more, which then miss the binary cache.
+        appstream-generator = final.callPackage ./appstream-generator.nix {
+          appstream = prev.appstream.overrideAttrs (old: rec {
+            version = "1.1.2";
+            src = prev.fetchFromGitHub {
+              owner = "ximion";
+              repo = "appstream";
+              rev = "v${version}";
+              sha256 = "sha256-tvdWWdL6PthffAZZnNZ3+17/eJdZFx8xFkqm7IvyPWE=";
+            };
+            patches = final.lib.init old.patches;
+            buildInputs =
+              old.buildInputs
+              ++ (with prev; [
+                libfyaml
+                bash-completion
+              ]);
+          });
+          inja = prev.inja.overrideAttrs (old: {
+            patches = [
+              # https://github.com/pantor/inja/pull/317
+              (prev.fetchpatch {
+                name = "cmake-install-pc.patch";
+                url = "https://github.com/pantor/inja/commit/ebb7aeb3ae49ccb49a642aaecb0d41483078b8bd.patch";
+                hash = "sha256-Cz0EbYwGwFcfhKd8lJzXDy2DpMAcHkz7EC/vVFV60c0=";
+              })
+            ];
+          });
+        };
       };
 
       pkgsFor =
