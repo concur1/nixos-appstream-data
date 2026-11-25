@@ -58,6 +58,14 @@ status() {
   echo "  Already processed: $1 of $TOTAL"
   echo "  This run:          $(( NEXT - DONE )) (attrs $(( DONE + 1 ))..$NEXT)"
   echo "  Still to process:  $(( TOTAL - $1 ))"
+  # Apparent size, as tar stores it: the LMDB file may be sparse.
+  echo "  Workspace size:    $(du -sh --apparent-size "$WS" | cut -f1) (uncompressed)"
+  # The repo's whole Actions cache; GitHub updates this figure with a delay.
+  if [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] && command -v gh > /dev/null; then
+    gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" \
+      --jq '"  Actions cache:     \(.active_caches_size_in_bytes / 1e7 | floor / 100) GB in \(.active_caches_count) entries (limit 10 GB by default)"' \
+      || echo "  Actions cache:     usage not available"
+  fi
 }
 status "$DONE" "Before"
 
