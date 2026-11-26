@@ -56,6 +56,10 @@
           inherit system;
           overlays = [ overlay ];
         };
+
+      # For scripts/flathub_merge.py; pyproject.toml has the versions it
+      # works with.
+      pythonFor = pkgs: pkgs.python3.withPackages (ps: [ ps.polars ]);
     in
     {
       packages = forAllSupportedSystems (
@@ -77,6 +81,7 @@
         {
           inherit appstream-data appstream-data-unfree appstream-data-all;
           inherit (pkgs) appstream-generator;
+          python = pythonFor pkgs;
         }
       );
 
@@ -90,6 +95,7 @@
             packages = [
               pkgs.appstream-generator
               pkgs.shellcheck
+              (pythonFor pkgs)
             ];
           };
         }

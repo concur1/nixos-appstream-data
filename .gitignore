@@ -1,3 +1,5 @@
 /result
 /.direnv
 /workspace*
+__pycache__/
+/.venv

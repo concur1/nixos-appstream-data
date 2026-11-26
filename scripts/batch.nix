@@ -1,9 +1,15 @@
 # The packages named in `attrsFile` (one attr path per line), for
-# `nix-env -qaP`; like upstream's unfree-filter.nix, without its overlay.
-{ nixpkgsPath, attrsFile }:
+# `nix-env -qaP`. Unfree ones have no store paths unless `allowUnfree`.
+{
+  nixpkgsPath,
+  attrsFile,
+  allowUnfree ? false,
+}:
 let
   pkgs = import nixpkgsPath {
-    config = import (nixpkgsPath + "/pkgs/top-level/packages-config.nix");
+    config = import (nixpkgsPath + "/pkgs/top-level/packages-config.nix") // {
+      inherit allowUnfree;
+    };
   };
   inherit (pkgs) lib;
 

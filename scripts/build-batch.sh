@@ -4,7 +4,8 @@
 # several runs: each run evaluates the next BATCH_SIZE attrs and adds them
 # to the package list. appstream-generator skips packages already in its
 # database, so a run costs about one batch. The run that completes the list
-# exports the catalogue into workspace/out/$SECTION; scripts/run-batches.sh
+# exports the catalogue into workspace/out/$SECTION, with what it lacks
+# filled in from Flathub's (scripts/merge-flathub.sh); scripts/run-batches.sh
 # runs batches until then.
 #
 # Evaluating store paths a batch at a time also keeps memory low: a full
@@ -87,8 +88,9 @@ status() {
 }
 status "$DONE" "Before"
 
-# Only the run that completes a pass leaves a catalogue here.
-rm -rf "$WS/out"
+# Only the run that completes a pass leaves a catalogue here (and
+# build-unfree.sh one in out/$SECTION-unfree).
+rm -rf "$WS/out/$SECTION"
 
 # This batch's packages, listed the way the generator lists them.
 BATCH="$PASS/batch-$(printf '%06d' "$DONE").json"
@@ -189,9 +191,7 @@ cp "$EXPORT"/Components*.gz "$OUT"/
 cp "$EXPORT"/icons* "$OUT"/
 
 for f in "$OUT"/Components*.gz; do
-  gunzip "$f"
-  sed -i "s/origin=\"[^\"]*\"/origin=\"$SECTION\"/" "${f%.gz}"
-  gzip "${f%.gz}"
+  "$SCRIPTS/merge-flathub.sh" "$f" "$SECTION" "$PKGROOT/packages.json"
 done
 
 (cd workspace && appstream-generator cleanup)

@@ -1,7 +1,9 @@
 # Runs scripts/build-batch.sh batch after batch (scripts/run-batches.sh) for
 # as long as a job may run, and publishes the catalogue as a release when a
-# pass over nixpkgs completes (scripts/publish-release.sh). Only
-# appstream/sources.json, which points at the release, is committed.
+# pass over nixpkgs completes (scripts/publish-release.sh). The unfree
+# catalogue (scripts/build-unfree.sh) follows each pass, and is published
+# the same way. Only appstream/sources.json, which points at the releases,
+# is committed.
 #
 # State between runs is workspace/, kept in the Actions cache. Each run saves
 # a new entry and restores the newest, so a run that is cut off still keeps
@@ -70,7 +72,7 @@ jobs:
           FORCE: ${{ inputs.force && '1' || '0' }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          nix shell --inputs-from . .#appstream-generator nixpkgs#jq nixpkgs#expect \
+          nix shell --inputs-from . .#appstream-generator .#python nixpkgs#jq nixpkgs#expect \
             --command scripts/run-batches.sh
 
       - name: Save workspace
@@ -90,11 +92,13 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: appstream-generator-log
-          path: workspace/appstream-generator.log
+          path: |
+            workspace/appstream-generator.log
+            workspace/unfree/appstream-generator.log
           if-no-files-found: ignore
 
-      # Only the run that completes a pass leaves a catalogue in
-      # workspace/out/.
+      # Only the run that completes a pass (or the unfree catalogue) leaves
+      # a catalogue in workspace/out/.
       - name: Publish catalogue
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:

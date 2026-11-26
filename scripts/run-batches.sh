@@ -6,6 +6,10 @@
 #
 # A new pass only starts when the channel has moved on since the last one,
 # unless FORCE=1.
+#
+# A completed pass is followed by the unfree catalogue for its revision
+# (scripts/build-unfree.sh), which may also take more than one run; it is
+# finished before a new pass starts, as it reads that pass's package list.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -14,6 +18,23 @@ SECTION="${SECTION:-nixos-unstable}"
 TIME_BUDGET="${TIME_BUDGET:-17400}"
 FORCE="${FORCE:-0}"
 WS=workspace
+DEADLINE=$(( $(date +%s) + TIME_BUDGET ))
+
+unfree() {
+  [[ -f "$WS/unfree/pending" ]] || return 0
+  DEADLINE=$DEADLINE scripts/build-unfree.sh
+}
+
+# A workspace from before the unfree catalogue was built this way.
+if [[ -f "$WS/last-pass" && ! -f "$WS/batch-state" && ! -f "$WS/unfree/rev" ]]; then
+  mkdir -p "$WS/unfree"
+  cp "$WS/last-pass" "$WS/unfree/pending"
+fi
+unfree
+if [[ -f "$WS/unfree/pending" ]]; then
+  echo "Unfree catalogue not complete yet; it goes on next run."
+  exit 0
+fi
 
 if [[ ! -f "$WS/batch-state" && -f "$WS/last-pass" && "$FORCE" != 1 ]]; then
   REV=$(nix flake metadata "nixpkgs/$SECTION" --json | jq -r '.revision')
@@ -39,6 +60,9 @@ while :; do
   # build-batch.sh drops its state when it completes a pass.
   if [[ ! -f "$WS/batch-state" ]]; then
     echo "Pass complete."
+    mkdir -p "$WS/unfree"
+    cp "$WS/last-pass" "$WS/unfree/pending"
+    unfree
     break
   fi
   left=$(( TIME_BUDGET - SECONDS ))
