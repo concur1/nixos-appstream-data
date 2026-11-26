@@ -16,6 +16,10 @@ or for both free and unfree combined
 nix build .#appstream-data-all
 ```
 
+The catalogues are built by the `Build AppStream data (batches)` workflow and
+published as GitHub release assets; `appstream/sources.json` points at the
+current release of each section, and the builds above fetch from there.
+
 # Licenses
 
 All metadata and icons fall under the licenses specified in their respective metainfo files under the `metadata_license` tag.

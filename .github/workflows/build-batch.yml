@@ -1,6 +1,7 @@
-# Runs scripts/build-batch.sh one batch at a time and commits the catalogue
-# when a pass over nixpkgs completes. Copy to .github/workflows/ in
-# nixos-appstream-data (or a fork), with build-batch.sh in scripts/.
+# Runs scripts/build-batch.sh batch after batch (scripts/run-batches.sh) for
+# as long as a job may run, and publishes the catalogue as a release when a
+# pass over nixpkgs completes (scripts/publish-release.sh). Only
+# appstream/sources.json, which points at the release, is committed.
 #
 # State between runs is workspace/, kept in the Actions cache. Each run saves
 # a new entry and restores the newest, so a run that is cut off still keeps
@@ -9,15 +10,21 @@ name: Build AppStream data (batches)
 
 on:
   schedule:
-    # About 26,000 apps and tools: a pass is 13 batches of 2,000.
+    # About 26,000 apps and tools: a pass is 13 batches of 2,000, over one
+    # or more runs. A run with nothing to do (the channel hasn't moved since
+    # the last pass) stops after checking.
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       batch_size:
         description: Attrs per batch
         default: "2000"
+      force:
+        description: Start a new pass even if the channel hasn't moved
+        type: boolean
+        default: false
 
-# One batch at a time: runs share workspace/.
+# One run at a time: runs share workspace/.
 concurrency:
   group: appstream-batches
   cancel-in-progress: false
@@ -48,27 +55,34 @@ jobs:
           path: |
             workspace
             !workspace/narcache
+            !workspace/out
           key: asgen-workspace-${{ github.run_id }}
           restore-keys: asgen-workspace-
 
-      - name: Build one batch
-        # Stops early enough for the workspace to be saved.
+      - name: Build batches
+        # Stops early enough for the workspace to be saved: run-batches.sh
+        # starts no batch it doesn't expect to finish within TIME_BUDGET
+        # seconds, and the timeout catches one that runs long.
         timeout-minutes: 330
         env:
           BATCH_SIZE: ${{ inputs.batch_size || '2000' }}
+          TIME_BUDGET: "17400"
+          FORCE: ${{ inputs.force && '1' || '0' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           nix shell --inputs-from . .#appstream-generator nixpkgs#jq nixpkgs#expect \
-            --command scripts/build-batch.sh
+            --command scripts/run-batches.sh
 
       - name: Save workspace
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          # Archives of a batch that was cut off aren't worth the space.
+          # Archives of a batch that was cut off aren't worth the space, and
+          # a finished catalogue is published below.
           path: |
             workspace
             !workspace/narcache
+            !workspace/out
           key: asgen-workspace-${{ github.run_id }}
 
       - name: Upload generator log
@@ -79,11 +93,14 @@ jobs:
           path: workspace/appstream-generator.log
           if-no-files-found: ignore
 
-      # Only the run that completes a pass changes appstream/.
-      - name: Commit catalogue
+      # Only the run that completes a pass leaves a catalogue in
+      # workspace/out/.
+      - name: Publish catalogue
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git add appstream
+          scripts/publish-release.sh
           if git diff --cached --quiet; then
             echo "Pass not complete yet; nothing to commit."
             exit 0
@@ -91,4 +108,5 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -m "Update AppStream data (nixpkgs $(cat workspace/last-pass))"
+          git pull --rebase
           git push

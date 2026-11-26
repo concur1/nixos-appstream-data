@@ -4,7 +4,8 @@
 # several runs: each run evaluates the next BATCH_SIZE attrs and adds them
 # to the package list. appstream-generator skips packages already in its
 # database, so a run costs about one batch. The run that completes the list
-# exports the catalogue into appstream/$SECTION.
+# exports the catalogue into workspace/out/$SECTION; scripts/run-batches.sh
+# runs batches until then.
 #
 # Evaluating store paths a batch at a time also keeps memory low: a full
 # `nix-env -qaP --out-path` of nixpkgs needs more than 9 GB.
@@ -86,6 +87,9 @@ status() {
 }
 status "$DONE" "Before"
 
+# Only the run that completes a pass leaves a catalogue here.
+rm -rf "$WS/out"
+
 # This batch's packages, listed the way the generator lists them.
 BATCH="$PASS/batch-$(printf '%06d' "$DONE").json"
 sed -n "$(( DONE + 1 )),${NEXT}p" "$PASS/attrs.txt" > "$PASS/batch-attrs.txt"
@@ -144,7 +148,8 @@ JSON
 pushd workspace
 # Collapsed in the Actions log; the whole output is also in the uploaded log.
 [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::appstream-generator output"
-unbuffer appstream-generator process nixpkgs --verbose 2>&1 | tee appstream-generator.log
+# Appended to: run-batches.sh starts the log afresh for each run.
+unbuffer appstream-generator process nixpkgs --verbose 2>&1 | tee -a appstream-generator.log
 [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::endgroup::"
 # Later batches don't read these archives again.
 rm -rf narcache
@@ -169,7 +174,7 @@ popd
 EXPORT="workspace/export/data/nixpkgs/$REV"
 if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
   {
-    echo "No catalogue in $EXPORT; appstream/$SECTION is unchanged."
+    echo "No catalogue in $EXPORT; nothing to publish."
     echo "workspace/export holds:"
     find workspace/export -maxdepth 4 || true
     echo "End of workspace/appstream-generator.log:"
@@ -177,12 +182,13 @@ if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
   } >&2
   exit 1
 fi
-rm -rf appstream/"$SECTION"
-mkdir -p appstream/"$SECTION"
-cp "$EXPORT"/Components*.gz appstream/"$SECTION"/
-cp "$EXPORT"/icons* appstream/"$SECTION"/
+# scripts/publish-release.sh publishes what is in out/.
+OUT="$WS/out/$SECTION"
+mkdir -p "$OUT"
+cp "$EXPORT"/Components*.gz "$OUT"/
+cp "$EXPORT"/icons* "$OUT"/
 
-for f in appstream/"$SECTION"/Components*.gz; do
+for f in "$OUT"/Components*.gz; do
   gunzip "$f"
   sed -i "s/origin=\"[^\"]*\"/origin=\"$SECTION\"/" "${f%.gz}"
   gzip "${f%.gz}"
@@ -199,4 +205,4 @@ find "$WS/nix-index" -maxdepth 1 -name '*.json' -printf '%f\n' | sort \
 
 rm -f "$STATE"
 echo "$REV" > "$WS/last-pass"
-echo "Pass complete: appstream/$SECTION updated from nixpkgs $REV."
+echo "Pass complete: catalogue of nixpkgs $REV in $OUT."

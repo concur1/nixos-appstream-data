@@ -11,6 +11,12 @@ network:
     # Job logs and artifact downloads redirect to these
     - "*.actions.githubusercontent.com"
     - "*.blob.core.windows.net"
+    # Python packages (polars) for the catalogue scripts
+    - pypi.org
+    - files.pythonhosted.org
+    # Flathub's AppStream catalogue, merged into ours
+    - dl.flathub.org
+    - flathub.org
 
 passthrough_envs:
   - name: GH_TOKEN
