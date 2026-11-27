@@ -60,7 +60,7 @@ class Matching(unittest.TestCase):
             catalogue(
                 ours("app.desktop", "Tool", "tool", '\n  <url type="homepage">http://www.tool.org/index.html</url>')
             ),
-            catalogue(flathub("org.tool.Tool", "Tool", homepage="https://tool.org/")),
+            catalogue(flathub("org.tool.Tool", "Tool Thing", homepage="https://tool.org/")),
         )
         self.assertEqual(m["app"], ("matched", "homepage", ["org.tool.Tool"]))
 
@@ -68,7 +68,9 @@ class Matching(unittest.TestCase):
         m = matches(
             catalogue(ours("tool.desktop", "Tool", "tool")),
             catalogue(
-                flathub("io.github.me.Tool", "Tool", homepage="https://tool.example", vcs="https://github.com/me/tool")
+                flathub(
+                    "io.github.me.Tool", "Tool Thing", homepage="https://tool.example", vcs="https://github.com/me/tool"
+                )
             ),
             {"tool": {"pname": "tool", "meta": {"homepage": "https://github.com/me/tool"}}},
         )
@@ -84,7 +86,7 @@ class Matching(unittest.TestCase):
     def test_homepage_shared_by_two_flathub_apps_is_ambiguous(self) -> None:
         m = matches(
             catalogue(
-                ours("viewer.desktop", "Suite Viewer", "suite", '\n  <url type="homepage">https://suite.org</url>')
+                ours("viewer.desktop", "Viewer for Suite", "suite", '\n  <url type="homepage">https://suite.org</url>')
             ),
             catalogue(
                 flathub("org.suite.Viewer", "Suite Viewer", homepage="https://suite.org"),
@@ -137,8 +139,58 @@ class Matching(unittest.TestCase):
         m = matches(
             catalogue(ours("discord.desktop", "Discord", "discord"), ours("slack.desktop", "Slack", "slack")), fh
         )
-        self.assertEqual(m["discord"], ("matched", "name", ["com.vendor.Discord"]))
+        self.assertEqual(m["discord"], ("matched", "pname", ["com.vendor.Discord"]))
         self.assertNotIn("slack", m)
+
+    def test_own_id_and_name_tell_variants_apart(self) -> None:
+        # Both pnames are "firefox" and both homepages are mozilla.com's.
+        packages = {
+            a: {"pname": "firefox", "meta": {"homepage": "https://www.mozilla.com/en-US/firefox/"}}
+            for a in ("firefox", "firefox-esr")
+        }
+        m = matches(
+            catalogue(
+                ours("firefox.desktop", "Firefox", "firefox"),
+                ours("firefox-esr.desktop", "Firefox ESR", "firefox-esr"),
+            ),
+            catalogue(flathub("org.mozilla.firefox", "Firefox", homepage="https://www.mozilla.org/firefox/")),
+            packages,
+        )
+        self.assertEqual(m["firefox"], ("matched", "name", ["org.mozilla.firefox"]))
+        self.assertEqual(m["firefox-esr"][0], "ambiguous")
+
+    def test_own_name_needs_the_same_site(self) -> None:
+        fh = catalogue(
+            flathub("io.github.cosmic_utils.camera", "Camera", homepage="https://github.com/cosmic-utils/camera"),
+            flathub("org.adishatz.Screenshot", "Screenshot", homepage="https://gitlab.gnome.org/gnumdk/screenshot"),
+        )
+        m = matches(
+            catalogue(
+                ours(
+                    "io.elementary.camera",
+                    "Camera",
+                    "elementary-camera",
+                    '\n  <url type="homepage">https://elementary.io</url>',
+                ),
+                ours(
+                    "org.gnome.Screenshot",
+                    "Screenshot",
+                    "gnome-screenshot",
+                    '\n  <url type="homepage">https://gitlab.gnome.org/GNOME/gnome-screenshot</url>',
+                ),
+                ours("camera2.desktop", "Camera", "camera2"),
+            ),
+            fh,
+        )
+        self.assertEqual(m, {})
+
+    def test_site_key(self) -> None:
+        self.assertEqual(fm.site_key("mozilla.org/firefox"), "mozilla")
+        self.assertEqual(fm.site_key("www2.mozilla.com/en-us/firefox"), "mozilla")
+        self.assertEqual(fm.site_key("github.com/cosmic-utils/camera"), "github.com/cosmic-utils")
+        self.assertEqual(fm.site_key("gitlab.gnome.org/gnome/gnome-screenshot"), "gitlab.gnome.org/gnome")
+        self.assertIsNone(fm.site_key("github.com"))
+        self.assertIsNone(fm.site_key(None))
 
     def test_stronger_rule_decides(self) -> None:
         # The ID match wins, and a weaker rule may not take the same app.

@@ -27,8 +27,9 @@ unfree() {
 
 # Bumped when the unfree catalogue has to be made afresh: the generator's
 # results for packages it already has stay otherwise. 2: descriptions for
-# packages without one, and symlinked .desktop directories.
-UNFREE_FORMAT=2
+# packages without one, and symlinked .desktop directories. 3: the
+# generator's summary for desktop entries without a Comment.
+UNFREE_FORMAT=3
 if [[ -d "$WS/unfree" && "$(cat "$WS/unfree/format" 2> /dev/null)" != "$UNFREE_FORMAT" ]]; then
   rm -rf "$WS/unfree"
 fi
@@ -43,6 +44,17 @@ unfree
 if [[ -f "$WS/unfree/pending" ]]; then
   echo "Unfree catalogue not complete yet; it goes on next run."
   exit 0
+fi
+
+# Bumped when the free catalogue has to be made afresh for the packages given
+# a stand-in description (build-batch.sh), as for a change to the generator:
+# they are forgotten again, in a new pass. 2: the generator's summary for
+# desktop entries without a Comment.
+FREE_FORMAT=2
+if [[ "$(cat "$WS/format" 2> /dev/null)" != "$FREE_FORMAT" ]]; then
+  rm -f "$WS/described-pkids"
+  [[ -f "$WS/batch-state" ]] || rm -f "$WS/last-pass"
+  echo "$FREE_FORMAT" > "$WS/format"
 fi
 
 if [[ ! -f "$WS/batch-state" && -f "$WS/last-pass" && "$FORCE" != 1 ]]; then
@@ -68,8 +80,11 @@ while :; do
   # build-batch.sh drops its state when it completes a pass.
   if [[ ! -f "$WS/batch-state" ]]; then
     echo "Pass complete."
-    cp "$WS/last-pass" "$WS/unfree/pending"
-    unfree
+    # Unless the unfree catalogue is of this revision already.
+    if [[ "$(cat "$WS/unfree/rev" 2> /dev/null)" != "$(cat "$WS/last-pass")" ]]; then
+      cp "$WS/last-pass" "$WS/unfree/pending"
+      unfree
+    fi
     break
   fi
   left=$(( TIME_BUDGET - SECONDS ))

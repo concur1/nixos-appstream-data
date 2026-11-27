@@ -75,6 +75,12 @@ in
 stdenv.mkDerivation {
   inherit pname version src;
 
+  patches = [
+    # Components from a desktop entry without a Comment get the package's
+    # summary, rather than being dropped for having none (Firefox's).
+    ./patches/appstream-generator-desktop-comment.patch
+  ];
+
   nativeBuildInputs = [
     meson
     pkg-config

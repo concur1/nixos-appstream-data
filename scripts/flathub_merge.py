@@ -56,7 +56,10 @@ LEGACY_LICENSES = {"CC0": "CC0-1.0", "CC-BY": "CC-BY-3.0", "CC-BY-SA": "CC-BY-SA
 OPERATORS = {"AND", "OR", "WITH"}
 
 # A bare forge host says nothing about which app it is.
-FORGES = {"github.com", "gitlab.com", "codeberg.org", "sourceforge.net", "bitbucket.org", "sr.ht"}
+FORGES = {
+    "github.com", "gitlab.com", "codeberg.org", "sourceforge.net", "bitbucket.org", "sr.ht",
+    "gitlab.gnome.org", "invent.kde.org", "gitlab.freedesktop.org", "salsa.debian.org",
+}  # fmt: skip
 
 APP_TYPES = {"desktop-application", "console-application"}
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
@@ -85,6 +88,20 @@ def url_key(url: str | None) -> str | None:
     if not host or (not path and host in FORGES):
         return None
     return u
+
+
+def site_key(key: str | None) -> str | None:
+    """The site of a url_key, for telling apps with one name apart: its
+    domain's name (mozilla for mozilla.org and mozilla.com), or on a forge
+    the owner (github.com/cosmic-utils)."""
+    if not key:
+        return None
+    host, _, path = key.partition("/")
+    if host in FORGES:
+        owner = path.split("/", 1)[0]
+        return f"{host}/{owner}" if owner else None
+    labels = host.split(".")
+    return labels[-2] if len(labels) > 1 else host
 
 
 def component_type(c: ET.Element) -> str:
@@ -173,6 +190,7 @@ def flathub_frame(root: ET.Element) -> pl.DataFrame:
                 "last_key": last,
                 "name_key": (name or "").casefold() or None,
                 "home_keys": sorted({k for k in (home, vcs) if k}),
+                "site_keys": sorted({s for k in (home, vcs) if (s := site_key(k))}),
                 "vcs_key": vcs,
                 "words": words(last, name),
                 "ref": c.findtext("bundle[@type='flatpak']"),
@@ -183,7 +201,7 @@ def flathub_frame(root: ET.Element) -> pl.DataFrame:
         schema={
             "frow": pl.Int64, "flathub_id": pl.String, "type": pl.String, "id_key": pl.String,
             "last_key": pl.String, "name_key": pl.String, "home_keys": pl.List(pl.String),
-            "vcs_key": pl.String, "words": pl.List(pl.String), "ref": pl.String,
+            "site_keys": pl.List(pl.String), "vcs_key": pl.String, "words": pl.List(pl.String), "ref": pl.String,
         },
     )  # fmt: skip
 
@@ -191,6 +209,7 @@ def flathub_frame(root: ET.Element) -> pl.DataFrame:
 OURS_SCHEMA = {
     "row": pl.Int64, "key": pl.String, "type": pl.String, "id_key": pl.String,
     "home_key": pl.String, "vcs_key": pl.String, "pname": pl.String, "words": pl.List(pl.String),
+    "last_key": pl.String, "name_key": pl.String, "site_key": pl.String,
 }  # fmt: skip
 
 
@@ -223,10 +242,13 @@ def ours_frame(root: ET.Element, packages: dict) -> pl.DataFrame:
                 "key": id_key(cid) or f"#{row}",
                 "type": component_type(c),
                 "id_key": id_key(cid),
-                "home_key": url_key(urls.get("homepage")) or url_key(nix_homepage(pkg)),
+                "home_key": (home := url_key(urls.get("homepage")) or url_key(nix_homepage(pkg))),
                 "vcs_key": url_key(urls.get("vcs-browser")),
                 "pname": pname or None,
                 "words": words(last_segment(cid), untranslated(c, "name"), pname),
+                "last_key": last_segment(cid),
+                "name_key": (untranslated(c, "name") or "").casefold() or None,
+                "site_key": site_key(home),
             }
         )
     return pl.DataFrame(rows, schema=OURS_SCHEMA)
@@ -244,6 +266,9 @@ def packages_frame(packages: dict) -> pl.DataFrame:
             "vcs_key": None,
             "pname": nix_pname(attr, pkg),
             "words": words(nix_pname(attr, pkg), attr.rsplit(".", 1)[-1], pkg.get("meta", {}).get("mainProgram")),
+            "last_key": None,
+            "name_key": None,
+            "site_key": None,
         }
         for i, (attr, pkg) in enumerate(sorted(packages.items()))
     ]
@@ -252,7 +277,9 @@ def packages_frame(packages: dict) -> pl.DataFrame:
 
 # --- Matching ----------------------------------------------------------------
 
-RULES = ["id", "homepage", "name"]
+# Strongest first. Variants of one app (firefox, firefox-esr) can share a
+# homepage and a pname, but not their component's own ID and name.
+RULES = ["id", "name", "pname", "homepage"]
 
 
 def candidates(ours: pl.DataFrame, flathub: pl.DataFrame) -> pl.DataFrame:
@@ -274,12 +301,20 @@ def candidates(ours: pl.DataFrame, flathub: pl.DataFrame) -> pl.DataFrame:
         )
         .select("key", "frow", pl.lit("homepage").alias("rule"))
     )
-    # Both the ID's last part and the name are the pname.
-    named = flathub.filter(pl.col("last_key") == pl.col("name_key"))
-    by_name = ours.join(named, left_on=["pname", "type"], right_on=["last_key", "type"]).select(
-        "key", "frow", pl.lit("name").alias("rule")
+    # The component's own ID ends as Flathub's and their names are equal:
+    # firefox.desktop, "Firefox" is org.mozilla.firefox, "Firefox". Names
+    # like "Camera" are common, so the homepage must be on its site too.
+    by_name = (
+        ours.join(flathub, on=["last_key", "name_key", "type"])
+        .filter(pl.col("site_key").is_in(pl.col("site_keys")))
+        .select("key", "frow", pl.lit("name").alias("rule"))
     )
-    return pl.concat([by_id, by_home, by_name]).unique()
+    # Flathub's ID ends as its name, and both are the pname.
+    named = flathub.filter(pl.col("last_key") == pl.col("name_key"))
+    by_pname = ours.join(named, left_on=["pname", "type"], right_on=["last_key", "type"]).select(
+        "key", "frow", pl.lit("pname").alias("rule")
+    )
+    return pl.concat([by_id, by_name, by_pname, by_home]).unique()
 
 
 def match(ours: pl.DataFrame, flathub: pl.DataFrame, unique_ours: bool = True) -> pl.DataFrame:

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Runs build-batch.sh's steps on a few attrs in a scratch workspace and shows
-# what appstream-generator makes of them, e.g.
+# what appstream-generator makes of them: its hints (why a package gives no
+# component), the components and the log, e.g.
 #
 #   nix shell .#appstream-generator nixpkgs#jq nixpkgs#expect \
 #     --command scripts/debug-batch.sh firefox gnome-calculator
 #
-# REV picks the nixpkgs revision (default: the current $SECTION channel).
+# REV picks the nixpkgs revision (default: the current $SECTION channel),
+# DEBUG_WS the workspace (default: a new temporary directory).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -19,40 +21,48 @@ SECTION="${SECTION:-nixos-unstable}"
 REV="${REV:-$(nix flake metadata "nixpkgs/$SECTION" --json | jq -r '.revision')}"
 NIXPKGS_PATH=$(nix eval --raw "github:nixos/nixpkgs/$REV#path")
 
-WS=$(mktemp -d "${TMPDIR:-/tmp}/asgen-debug.XXXXXX")
+WS="${DEBUG_WS:-$(mktemp -d "${TMPDIR:-/tmp}/asgen-debug.XXXXXX")}"
+mkdir -p "$WS"
 echo "Workspace: $WS"
 printf '%s\n' "$@" > "$WS/attrs.txt"
 
-# As in build-batch.sh.
+# As in build-batch.sh, with the stand-in descriptions.
 PKGROOT="$WS/cache/nixpkgs/$REV/x86_64-linux"
 mkdir -p "$PKGROOT" "$WS/nix-index"
 nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
   --arg nixpkgsPath "$NIXPKGS_PATH" --arg attrsFile "$WS/attrs.txt" \
   | jq -c '{version: 2, packages: .}' > "$PKGROOT/packages.json"
+"$SCRIPTS/fetch-flathub.sh" "$WS/flathub.xml.gz"
+echo "== Given the summary as long description:"
+uv run "$SCRIPTS/flathub_merge.py" --flathub "$WS/flathub.xml.gz" describe "$PKGROOT/packages.json"
 ln -sfn "$WS/nix-index" "$PKGROOT/index"
 
 "$SCRIPTS/asgen-config.sh" "$WS" "$REV" "https://cache.nixos.org?local-nar-cache=$WS/narcache"
 
-(cd "$WS" && unbuffer appstream-generator process nixpkgs --verbose > appstream-generator.log 2>&1) \
-  || echo "appstream-generator failed: $?"
+for command in process publish; do
+  (cd "$WS" && unbuffer appstream-generator "$command" nixpkgs --verbose >> appstream-generator.log 2>&1) \
+    || echo "appstream-generator $command failed: $?"
+done
 
 echo
-echo "== packages.json, without meta"
-jq '.packages | map_values(del(.meta))' "$PKGROOT/packages.json"
+echo "== Hints, by package"
+for f in "$WS"/export/hints/nixpkgs/"$REV"/Hints-*.json.gz; do
+  [[ -e "$f" ]] || continue
+  gunzip -c "$f" | jq .
+done
 echo
-echo "== Store listings in nix-index/"
-ls -la "$WS/nix-index"
+echo "== Components (id, package, icons)"
+for f in "$WS"/export/data/nixpkgs/"$REV"/Components-*.xml.gz; do
+  [[ -e "$f" ]] || continue
+  gunzip -c "$f" | grep -E '<id>|<pkgname>|<icon ' || echo "(none)"
+done
+echo
+echo "== Store listings: share/ of each package"
 for f in "$WS"/nix-index/*.json; do
   [[ -e "$f" ]] || continue
-  echo "-- $(basename "$f"): $(wc -c < "$f") bytes; start:"
-  head -c 600 "$f"
-  echo
-  echo "-- desktop/metainfo files in it:"
-  grep -oE '"(applications|metainfo|appdata)"|[^"]*\.desktop"|[^"]*\.metainfo\.xml"' "$f" | head || echo "(none)"
+  echo "-- $(basename "$f")"
+  jq -c '.entries.share | if .type == "directory" then {type, entries: (.entries | keys)} else . end' "$f"
 done
 echo
 echo "== Generator log"
-cat "$WS/appstream-generator.log"
-echo
-echo "== Export"
-find "$WS/export" -maxdepth 4 2>/dev/null || echo "(no export directory)"
+grep -vE 'Rendering HTML page' "$WS/appstream-generator.log"
