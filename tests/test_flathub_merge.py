@@ -60,7 +60,7 @@ class Matching(unittest.TestCase):
             catalogue(
                 ours("app.desktop", "Tool", "tool", '\n  <url type="homepage">http://www.tool.org/index.html</url>')
             ),
-            catalogue(flathub("org.tool.Tool", "Tool", homepage="https://tool.org/")),
+            catalogue(flathub("org.tool.Tool", "Tool Thing", homepage="https://tool.org/")),
         )
         self.assertEqual(m["app"], ("matched", "homepage", ["org.tool.Tool"]))
 
@@ -68,7 +68,9 @@ class Matching(unittest.TestCase):
         m = matches(
             catalogue(ours("tool.desktop", "Tool", "tool")),
             catalogue(
-                flathub("io.github.me.Tool", "Tool", homepage="https://tool.example", vcs="https://github.com/me/tool")
+                flathub(
+                    "io.github.me.Tool", "Tool Thing", homepage="https://tool.example", vcs="https://github.com/me/tool"
+                )
             ),
             {"tool": {"pname": "tool", "meta": {"homepage": "https://github.com/me/tool"}}},
         )
@@ -84,7 +86,7 @@ class Matching(unittest.TestCase):
     def test_homepage_shared_by_two_flathub_apps_is_ambiguous(self) -> None:
         m = matches(
             catalogue(
-                ours("viewer.desktop", "Suite Viewer", "suite", '\n  <url type="homepage">https://suite.org</url>')
+                ours("viewer.desktop", "Viewer for Suite", "suite", '\n  <url type="homepage">https://suite.org</url>')
             ),
             catalogue(
                 flathub("org.suite.Viewer", "Suite Viewer", homepage="https://suite.org"),
@@ -165,7 +167,10 @@ class Matching(unittest.TestCase):
         m = matches(
             catalogue(
                 ours(
-                    "io.elementary.camera", "Camera", "camera", '\n  <url type="homepage">https://elementary.io</url>'
+                    "io.elementary.camera",
+                    "Camera",
+                    "elementary-camera",
+                    '\n  <url type="homepage">https://elementary.io</url>',
                 ),
                 ours(
                     "org.gnome.Screenshot",
