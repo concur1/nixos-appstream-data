@@ -1,35 +1,69 @@
 {
   "nixos-unstable": {
-    "release": "nixos-unstable-20261127-012728",
+    "release": "nixos-unstable-20261127-051207",
     "revision": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
     "files": {
       "Components-x86_64-linux.xml.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.Components-x86_64-linux.xml.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.Components-x86_64-linux.xml.gz",
         "hash": "sha256-SwMJ/z83qBxlLxUMgSpiH87KsGIpx8MVEL8SgcJgx98="
       },
       "icons-128x128.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-128x128.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-128x128.tar.gz",
         "hash": "sha256-peoQVHjoyI3qbbd8xQWdM6hOt/5xC7eyK+UpyMx9i2c="
       },
       "icons-128x128@2.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-128x128-at-2.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-128x128-at-2.tar.gz",
         "hash": "sha256-rL0Hk8CTqKms5l2xIjVoK9uJ2YiahJ2xsbUnps4oh5c="
       },
       "icons-48x48.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-48x48.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-48x48.tar.gz",
         "hash": "sha256-N5mfgIyo4b8hlVLfZ/xQqFoxr7SKN8Pupqg2ns+x6b8="
       },
       "icons-48x48@2.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-48x48-at-2.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-48x48-at-2.tar.gz",
         "hash": "sha256-POMRazGga9ePX37aZ8kmcMuIc/w3Xp2C0yFGTy+ox5o="
       },
       "icons-64x64.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-64x64.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-64x64.tar.gz",
         "hash": "sha256-kSAvnpv80AXVwky2MzVwBthfWJVe3yHg92SY6i0JgkM="
       },
       "icons-64x64@2.tar.gz": {
-        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-012728/nixos-unstable.icons-64x64-at-2.tar.gz",
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-051207/nixos-unstable.icons-64x64-at-2.tar.gz",
         "hash": "sha256-1CtnowfOWv1yjwQQ671irm17HljZQw01JpQnAIYfpqs="
+      }
+    }
+  },
+  "nixos-unstable-unfree": {
+    "release": "nixos-unstable-unfree-20261127-051202",
+    "revision": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+    "files": {
+      "Components-x86_64-linux.xml.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.Components-x86_64-linux.xml.gz",
+        "hash": "sha256-R0153fhQfr0SUjlsaEbrNbTJ9LQHaEsahzMEsPRrWvQ="
+      },
+      "icons-128x128.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-128x128.tar.gz",
+        "hash": "sha256-6yQENGRJrdEEUuBWG+dwMrjDvn0RJvq4XNjf3ooICJw="
+      },
+      "icons-128x128@2.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-128x128-at-2.tar.gz",
+        "hash": "sha256-eYm7MRuqOO9UUlAoKqBl0jKBxG37j6q+TGU0h7297Vw="
+      },
+      "icons-48x48.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-48x48.tar.gz",
+        "hash": "sha256-lOYNcZlTGQb9XepotQ/EdnrDFIwB7OuFTEzDjdE52pk="
+      },
+      "icons-48x48@2.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-48x48-at-2.tar.gz",
+        "hash": "sha256-eYm7MRuqOO9UUlAoKqBl0jKBxG37j6q+TGU0h7297Vw="
+      },
+      "icons-64x64.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-64x64.tar.gz",
+        "hash": "sha256-M84+nJSQgWqeUZNY/T6Lg8R2OWYkHpVsd3xPRimRjMM="
+      },
+      "icons-64x64@2.tar.gz": {
+        "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-unfree-20261127-051202/nixos-unstable-unfree.icons-64x64-at-2.tar.gz",
+        "hash": "sha256-eYm7MRuqOO9UUlAoKqBl0jKBxG37j6q+TGU0h7297Vw="
       }
     }
   }
