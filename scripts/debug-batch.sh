@@ -46,9 +46,9 @@ done
 
 echo
 echo "== Hints, by package"
-for f in "$WS"/export/hints/nixpkgs/"$REV"/Hints-*.json*; do
+for f in "$WS"/export/hints/nixpkgs/"$REV"/Hints-*.json.gz; do
   [[ -e "$f" ]] || continue
-  if [[ "$f" == *.gz ]]; then gunzip -c "$f"; else cat "$f"; fi | jq .
+  gunzip -c "$f" | jq .
 done
 echo
 echo "== Components (id, package, icons)"

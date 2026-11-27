@@ -1,0 +1,62 @@
+--- a/src/backends/nix/nixpkg.cpp
++++ b/src/backends/nix/nixpkg.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include "nixpkg.h"
+ 
++#include <algorithm>
+ #include <filesystem>
+ #include <format>
+ #include <regex>
+@@ -37,6 +38,35 @@
+ 
+ namespace ASGenerator
+ {
++
++// AppStream drops a component made from a desktop entry without a Comment,
++// as it has no summary (metainfo-no-summary), unless metainfo gives one.
++// Many nixpkgs desktop entries have none (Firefox's), so the package's own
++// summary stands in for it.
++static std::vector<std::uint8_t> addMissingComment(
++    const std::vector<std::uint8_t> &data,
++    const std::string &comment)
++{
++    std::string text(data.begin(), data.end());
++    const std::string header = "[Desktop Entry]";
++    const auto start = text.find(header);
++    if (start == std::string::npos)
++        return data;
++
++    const auto groupEnd = text.find("\n[", start + header.size());
++    const auto group = text.substr(start, groupEnd == std::string::npos ? std::string::npos : groupEnd - start);
++    if (group.find("\nComment=") != std::string::npos)
++        return data;
++
++    std::string value = comment;
++    std::replace(value.begin(), value.end(), '\n', ' ');
++    const auto lineEnd = text.find('\n', start);
++    if (lineEnd == std::string::npos)
++        text += "\nComment=" + value + "\n";
++    else
++        text.insert(lineEnd + 1, "Comment=" + value + "\n");
++    return {text.begin(), text.end()};
++}
+ 
+ NixPackage::NixPackage(
+     const std::string &storeUrl,
+@@ -127,7 +157,14 @@
+         return {' '};
+     }
+ 
+-    m_pkgFileData[fname] = nixStoreCat(m_nixExe, m_storeUrl, mapIt->second, Config::get().cacheRootDir().string());
++    auto data = nixStoreCat(m_nixExe, m_storeUrl, mapIt->second, Config::get().cacheRootDir().string());
++    if (fname.starts_with("/usr/share/applications/") && fname.ends_with(".desktop")) {
++        const auto &summaries = summary();
++        const auto it = summaries.find("C");
++        if (it != summaries.end() && !it->second.empty())
++            data = addMissingComment(data, it->second);
++    }
++    m_pkgFileData[fname] = std::move(data);
+     return m_pkgFileData[fname];
+ }
+ 
