@@ -98,6 +98,14 @@ sed -n "$(( DONE + 1 )),${NEXT}p" "$PASS/attrs.txt" > "$PASS/batch-attrs.txt"
 nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
   --arg nixpkgsPath "$NIXPKGS_PATH" --arg attrsFile "$PASS/batch-attrs.txt" \
   > "$BATCH.tmp"
+# Those that match a Flathub app and have no long description get their
+# summary as one (flathub_merge.py describe): otherwise the generator drops
+# the component of one without metainfo, as Firefox's. Without Flathub,
+# they go without for this pass.
+if ! python3 "$SCRIPTS/flathub_merge.py" describe "$BATCH.tmp" > "$PASS/batch-described.txt"; then
+  echo "::warning::Flathub not reachable; no stand-in descriptions for this batch."
+  : > "$PASS/batch-described.txt"
+fi
 mv "$BATCH.tmp" "$BATCH"
 
 # Only the old revisions' package lists go; the database keeps results for
@@ -148,6 +156,13 @@ cat > "$WS/asgen-config.json" << JSON
 JSON
 
 pushd workspace
+# What the generator has of those packages may be from before they had a
+# description; it is dropped once for each, as described-pkids records.
+touch described-pkids
+{ grep -vxF -f described-pkids "$PASS/batch-described.txt" || true; } | while read -r pkid; do
+  appstream-generator forget "$pkid" >> appstream-generator.log 2>&1
+  echo "$pkid" >> described-pkids
+done
 # Collapsed in the Actions log; the whole output is also in the uploaded log.
 [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::appstream-generator output"
 # Appended to: run-batches.sh starts the log afresh for each run.

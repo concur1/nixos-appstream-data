@@ -44,10 +44,8 @@ summary() {
   fi
 }
 
-# A new unfree pass: what to build. The generator drops a component made
-# from a .desktop file alone if the package has no long description, as most
-# unfree ones don't; their summary stands in, and the Flathub merge replaces
-# it with the app's own description.
+# A new unfree pass: what to build. Most unfree packages have no long
+# description, so they get their summary as one (as in build-batch.sh).
 if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
   PASS_PACKAGES="$WS/cache/nixpkgs/$REV/x86_64-linux/packages.json"
   if [[ ! -f "$PASS_PACKAGES" ]]; then
@@ -63,8 +61,8 @@ if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
     "$PASS_PACKAGES" > "$UWS/no-outputs.txt"
   nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
     --arg nixpkgsPath "$NIXPKGS_PATH" --arg attrsFile "$UWS/no-outputs.txt" --arg allowUnfree true \
-    | jq -c '{version: 2, packages: map_values(if .meta.description then .meta.longDescription //= .meta.description else . end)}' \
-    > "$UNFREE_PACKAGES"
+    | jq -c '{version: 2, packages: .}' > "$UNFREE_PACKAGES"
+  python3 "$SCRIPTS/flathub_merge.py" describe "$UNFREE_PACKAGES" > /dev/null
   python3 "$SCRIPTS/flathub_merge.py" select --packages "$UNFREE_PACKAGES" > "$UWS/queue.txt"
   touch "$UWS"/{done,failed}.txt
   echo "$REV" > "$UWS/rev"

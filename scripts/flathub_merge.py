@@ -3,6 +3,7 @@ catalogue, and picks the unfree packages worth building.
 
   flathub_merge.py merge CATALOGUE.xml.gz --section S [--packages packages.json]
   flathub_merge.py select --packages packages.json
+  flathub_merge.py describe PACKAGES.json
 
 `merge` rewrites the catalogue in place: it sets its origin to the section
 and, for each component that matches a Flathub app, adds the fields it is
@@ -13,6 +14,10 @@ matches goes to stdout and the job summary.
 
 `select` prints the unfree attrs in a packages.json that match a Flathub
 app: the unfree packages to build.
+
+`describe` gives packages that match a Flathub app and lack a long
+description their summary as one, so the generator keeps their components
+(see describe()), and prints their package IDs.
 """
 
 from __future__ import annotations
@@ -536,6 +541,14 @@ def cmd_merge(args: argparse.Namespace) -> None:
     write_catalogue(root, path)
 
 
+def flathub_attrs(packages: dict, fh_root: ET.Element) -> list[str]:
+    """The attrs among `packages` (not built yet) that match a Flathub app.
+    Several attrs may be one app (versions, variants): merge decides on
+    their component IDs once they are built."""
+    decided = match(packages_frame(packages), flathub_frame(fh_root), unique_ours=False)
+    return decided.filter(pl.col("status") == "matched").sort("key")["key"].to_list()
+
+
 def select(packages: dict, fh_root: ET.Element) -> list[str]:
     """The unfree attrs that can be built and match a Flathub app."""
     unfree = {
@@ -543,15 +556,48 @@ def select(packages: dict, fh_root: ET.Element) -> list[str]:
         for attr, pkg in packages.items()
         if pkg.get("meta", {}).get("unfree") and isinstance(pkg.get("outputs"), dict)
     }
-    # Several attrs may be one app (versions, variants): all are worth
-    # building, and merge then decides on their component IDs.
-    decided = match(packages_frame(unfree), flathub_frame(fh_root), unique_ours=False)
-    return decided.filter(pl.col("status") == "matched").sort("key")["key"].to_list()
+    return flathub_attrs(unfree, fh_root)
+
+
+def describe(packages: dict, fh_root: ET.Element) -> list[str]:
+    """Gives packages that match a Flathub app and have no long description
+    their summary as one, in place, and returns their package IDs.
+
+    The generator drops a component made from a .desktop file alone (no
+    metainfo, as Firefox's) if its package has no long description; merge
+    then replaces the summary with the app's own description."""
+    bare = {
+        attr: pkg
+        for attr, pkg in packages.items()
+        if isinstance(pkg.get("outputs"), dict)
+        and isinstance(pkg.get("meta", {}).get("description"), str)
+        and not pkg["meta"].get("longDescription")
+    }
+    pkids = []
+    for attr in flathub_attrs(bare, fh_root):
+        pkg = packages[attr]
+        pkg["meta"]["longDescription"] = pkg["meta"]["description"]
+        # As the generator's nix backend names packages.
+        pkids.append(f"{attr}/{pkg.get('version', '')}/{pkg.get('system', '')}")
+    return pkids
 
 
 def cmd_select(args: argparse.Namespace) -> None:
     for attr in select(load_packages(args.packages), read_catalogue(args.flathub)):
         print(attr)
+
+
+def cmd_describe(args: argparse.Namespace) -> None:
+    path = Path(args.packages)
+    data = json.loads(path.read_text())
+    # A packages.json, or nix-env's output that one is made of.
+    packages = data["packages"] if "version" in data else data
+    pkids = describe(packages, read_catalogue(args.flathub))
+    tmp = path.with_name(path.name + ".describe")
+    tmp.write_text(json.dumps(data, separators=(",", ":")))
+    tmp.replace(path)
+    for pkid in pkids:
+        print(pkid)
 
 
 def main() -> None:
@@ -567,8 +613,10 @@ def main() -> None:
     m.add_argument("--license-cache", help="JSON file of metadata licences by commit, kept between runs")
     s = sub.add_parser("select")
     s.add_argument("--packages", required=True)
+    d = sub.add_parser("describe")
+    d.add_argument("packages", help="a packages.json or nix-env --json output, changed in place")
     args = p.parse_args()
-    {"merge": cmd_merge, "select": cmd_select}[args.command](args)
+    {"merge": cmd_merge, "select": cmd_select, "describe": cmd_describe}[args.command](args)
 
 
 if __name__ == "__main__":

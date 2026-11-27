@@ -154,6 +154,28 @@ class Select(unittest.TestCase):
         self.assertEqual(fm.select(packages, fh), ["discord", "discord-ptb"])
 
 
+class Describe(unittest.TestCase):
+    def test_summary_as_long_description_for_flathub_apps(self):
+        def pkg(**meta):
+            return {"pname": "firefox", "version": "1", "system": "x86_64-linux",
+                    "outputs": {"out": "/nix/store/a"}, "meta": {"description": "Web browser", **meta}}  # fmt: skip
+
+        packages = {
+            "firefox": pkg(),
+            "firefox-esr": pkg(homepage="https://www.mozilla.org/firefox/"),
+            "described": pkg(longDescription="Its own"),
+            "elsewhere": {**pkg(), "pname": "elsewhere"},
+            "unbuilt": {k: v for k, v in pkg().items() if k != "outputs"},
+        }
+        fh = catalogue(flathub("org.mozilla.firefox", "Firefox", homepage="https://www.mozilla.org/firefox/"))
+        pkids = fm.describe(packages, fh)
+        self.assertEqual(pkids, ["firefox/1/x86_64-linux", "firefox-esr/1/x86_64-linux"])
+        self.assertEqual(packages["firefox"]["meta"]["longDescription"], "Web browser")
+        self.assertEqual(packages["described"]["meta"]["longDescription"], "Its own")
+        self.assertNotIn("longDescription", packages["elsewhere"]["meta"])
+        self.assertNotIn("longDescription", packages["unbuilt"]["meta"])
+
+
 class Licences(unittest.TestCase):
     def test_license_allowed(self):
         for expr in ["CC0-1.0", "CC0", "MIT", "FSFAP", "CC-BY-SA-4.0", "GFDL-1.3-or-later", "GFDL-1.3+",
