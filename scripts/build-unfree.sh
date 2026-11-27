@@ -116,29 +116,7 @@ inline_links() {
   done
 }
 
-cat > "$UWS/asgen-config.json" << JSON
-{
-  "ProjectName": "Nix",
-  "ArchiveRoot": "auto",
-  "Backend": "nix",
-  "Features": {
-    "processDesktop": true,
-    "validateMetainfo": true,
-    "createScreenshotsStore": false,
-    "noDownloads": false
-  },
-  "Suites": {
-    "nixpkgs": {
-      "sections": [
-        "$REV"
-      ],
-      "architectures": [
-        "x86_64-linux"
-      ]
-    }
-  }
-}
-JSON
+"$SCRIPTS/asgen-config.sh" "$UWS" "$REV" auto
 
 asgen() {
   (cd "$UWS" && unbuffer appstream-generator "$@" --verbose >> appstream-generator.log 2>&1)
@@ -213,32 +191,11 @@ if [[ ! -s "$UWS/done.txt" ]]; then
   exit 0
 fi
 
-# All done: export, as build-batch.sh does for the free catalogue.
+# All done. A pass begun before build-unfree.sh fetched Flathub's catalogue
+# at its start has none yet.
 write_packages
-asgen publish nixpkgs
-EXPORT="$UWS/export/data/nixpkgs/$REV"
-if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
-  echo "No catalogue in $EXPORT; see $UWS/appstream-generator.log." >&2
-  exit 1
-fi
-OUT="$WS/out/$UNFREE"
-rm -rf "$OUT"
-mkdir -p "$OUT"
-cp "$EXPORT"/Components*.gz "$EXPORT"/icons* "$OUT"/
 "$SCRIPTS/fetch-flathub.sh" "$FLATHUB"
-for f in "$OUT"/Components*.gz; do
-  "$SCRIPTS/merge-flathub.sh" "$f" "$UNFREE" "$UNFREE_PACKAGES" "$FLATHUB"
-done
-echo "$REV" > "$OUT/revision"
-asgen cleanup
-
-# Listings of store paths no longer in the list.
-jq -r '.packages[].outputs[]? | ltrimstr("/nix/store/") + ".json"' "$PKGROOT/packages.json" \
-  | sort -u > "$UWS/index-keep"
-find "$UWS/nix-index" -maxdepth 1 -name '*.json' -printf '%f\n' | sort \
-  | comm -23 - "$UWS/index-keep" \
-  | sed "s|^|$UWS/nix-index/|" | xargs -r rm -f
+"$SCRIPTS/export-catalogue.sh" "$UWS" "$REV" "$UNFREE" "$PKGROOT/packages.json" "$FLATHUB"
 find "$UWS/cache/nixpkgs" -mindepth 1 -maxdepth 1 ! -name "$REV" -exec rm -rf {} +
-
 rm -f "$UWS/pending"
-echo "Unfree catalogue of nixpkgs $REV in $OUT."
+echo "Unfree catalogue of nixpkgs $REV in workspace/out/$UNFREE."

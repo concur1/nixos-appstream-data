@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Like scripts/build.sh, but only for "Apps & tools" (top-level packages and
-# the nested sets in APP_SETS, as in Dendrite's search tags) and spread over
-# several runs: each run evaluates the next BATCH_SIZE attrs and adds them
-# to the package list. appstream-generator skips packages already in its
-# database, so a run costs about one batch. The run that completes the list
-# exports the catalogue into workspace/out/$SECTION, with what it lacks
-# filled in from Flathub's (scripts/merge-flathub.sh); scripts/run-batches.sh
+# One batch of a pass over the "Apps & tools" of nixpkgs (top-level packages
+# and the nested sets in APP_SETS, as in Dendrite's search tags): evaluates
+# the next BATCH_SIZE attrs and adds them to the package list.
+# appstream-generator skips packages already in its database, so a run costs
+# about one batch. The run that completes the list exports the catalogue into
+# workspace/out/$SECTION (scripts/export-catalogue.sh); scripts/run-batches.sh
 # runs batches until then.
 #
 # Evaluating store paths a batch at a time also keeps memory low: a full
@@ -130,29 +129,7 @@ else
   ARCHIVE_ROOT="https://cache.nixos.org"
 fi
 
-cat > "$WS/asgen-config.json" << JSON
-{
-  "ProjectName": "Nix",
-  "ArchiveRoot": "$ARCHIVE_ROOT",
-  "Backend": "nix",
-  "Features": {
-    "processDesktop": true,
-    "validateMetainfo": true,
-    "createScreenshotsStore": false,
-    "noDownloads": false
-  },
-  "Suites": {
-    "nixpkgs": {
-      "sections": [
-        "$REV"
-      ],
-      "architectures": [
-        "x86_64-linux"
-      ]
-    }
-  }
-}
-JSON
+"$SCRIPTS/asgen-config.sh" "$WS" "$REV" "$ARCHIVE_ROOT"
 
 pushd workspace
 # What the generator has of those packages may be from before they had a
@@ -178,47 +155,8 @@ if (( NEXT < TOTAL )); then
   exit 0
 fi
 
-# Pass complete: export, and drop results for packages no longer listed.
-# `process` skips exporting when a batch has nothing new with metadata, so
-# export the whole section from the database here.
-pushd workspace
-[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::appstream-generator publish output"
-unbuffer appstream-generator publish nixpkgs --verbose 2>&1 | tee -a appstream-generator.log
-[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::endgroup::"
-popd
-
-EXPORT="workspace/export/data/nixpkgs/$REV"
-if ! compgen -G "$EXPORT/Components*.gz" > /dev/null; then
-  {
-    echo "No catalogue in $EXPORT; nothing to publish."
-    echo "workspace/export holds:"
-    find workspace/export -maxdepth 4 || true
-    echo "End of workspace/appstream-generator.log:"
-    tail -n 60 workspace/appstream-generator.log
-  } >&2
-  exit 1
-fi
-# scripts/publish-release.sh publishes what is in out/.
-OUT="$WS/out/$SECTION"
-mkdir -p "$OUT"
-cp "$EXPORT"/Components*.gz "$OUT"/
-cp "$EXPORT"/icons* "$OUT"/
-
-for f in "$OUT"/Components*.gz; do
-  "$SCRIPTS/merge-flathub.sh" "$f" "$SECTION" "$PKGROOT/packages.json" "$FLATHUB"
-done
-# For publish-release.sh, as the unfree catalogue can be of another.
-echo "$REV" > "$OUT/revision"
-
-(cd workspace && appstream-generator cleanup)
-
-# Listings of store paths no longer in the list.
-jq -r '.packages[].outputs[]? | select(type == "string") | ltrimstr("/nix/store/") + ".json"' \
-  "$PKGROOT/packages.json" | sort -u > "$PASS/index-keep"
-find "$WS/nix-index" -maxdepth 1 -name '*.json' -printf '%f\n' | sort \
-  | comm -23 - "$PASS/index-keep" \
-  | sed "s|^|$WS/nix-index/|" | xargs -r rm -f
-
+# Pass complete.
+"$SCRIPTS/export-catalogue.sh" "$WS" "$REV" "$SECTION" "$PKGROOT/packages.json" "$FLATHUB"
 rm -f "$STATE"
 echo "$REV" > "$WS/last-pass"
-echo "Pass complete: catalogue of nixpkgs $REV in $OUT."
+echo "Pass complete: catalogue of nixpkgs $REV in workspace/out/$SECTION."

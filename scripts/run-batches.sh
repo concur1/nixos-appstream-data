@@ -34,11 +34,10 @@ if [[ -d "$WS/unfree" && "$(cat "$WS/unfree/format" 2> /dev/null)" != "$UNFREE_F
 fi
 # For the last pass, if there's no unfree catalogue for it (as after the
 # above).
+mkdir -p "$WS/unfree"
 if [[ -f "$WS/last-pass" && ! -f "$WS/batch-state" && ! -f "$WS/unfree/rev" ]]; then
-  mkdir -p "$WS/unfree"
   cp "$WS/last-pass" "$WS/unfree/pending"
 fi
-mkdir -p "$WS/unfree"
 echo "$UNFREE_FORMAT" > "$WS/unfree/format"
 unfree
 if [[ -f "$WS/unfree/pending" ]]; then
@@ -55,7 +54,6 @@ if [[ ! -f "$WS/batch-state" && -f "$WS/last-pass" && "$FORCE" != 1 ]]; then
 fi
 
 # The generator log of this run's batches (uploaded by the workflow).
-mkdir -p "$WS"
 : > "$WS/appstream-generator.log"
 
 longest=0
@@ -70,7 +68,6 @@ while :; do
   # build-batch.sh drops its state when it completes a pass.
   if [[ ! -f "$WS/batch-state" ]]; then
     echo "Pass complete."
-    mkdir -p "$WS/unfree"
     cp "$WS/last-pass" "$WS/unfree/pending"
     unfree
     break

@@ -31,29 +31,7 @@ nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
   | jq -c '{version: 2, packages: .}' > "$PKGROOT/packages.json"
 ln -sfn "$WS/nix-index" "$PKGROOT/index"
 
-cat > "$WS/asgen-config.json" << JSON
-{
-  "ProjectName": "Nix",
-  "ArchiveRoot": "https://cache.nixos.org?local-nar-cache=$WS/narcache",
-  "Backend": "nix",
-  "Features": {
-    "processDesktop": true,
-    "validateMetainfo": true,
-    "createScreenshotsStore": false,
-    "noDownloads": false
-  },
-  "Suites": {
-    "nixpkgs": {
-      "sections": [
-        "$REV"
-      ],
-      "architectures": [
-        "x86_64-linux"
-      ]
-    }
-  }
-}
-JSON
+"$SCRIPTS/asgen-config.sh" "$WS" "$REV" "https://cache.nixos.org?local-nar-cache=$WS/narcache"
 
 (cd "$WS" && unbuffer appstream-generator process nixpkgs --verbose > appstream-generator.log 2>&1) \
   || echo "appstream-generator failed: $?"

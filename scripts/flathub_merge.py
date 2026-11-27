@@ -39,8 +39,6 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).parent))
 import ostree_metainfo
 
-FLATHUB_CATALOGUE = "https://dl.flathub.org/repo/appstream/x86_64/appstream.xml.gz"
-
 # Each copied from Flathub when the component has none (with developer,
 # missing <url> types and remote icons; see enrich). Releases, bundles,
 # launchables, cached icons and <custom> never are: they describe the
@@ -120,11 +118,8 @@ def license_allowed(expr: str | None) -> bool:
 # --- Catalogues --------------------------------------------------------------
 
 
-def read_catalogue(source: str) -> ET.Element:
-    if re.match(r"https?://", source):
-        data = ostree_metainfo.get(source, timeout=300)
-    else:
-        data = Path(source).read_bytes()
+def read_catalogue(path: str) -> ET.Element:
+    data = Path(path).read_bytes()
     if data[:2] == b"\x1f\x8b":
         data = gzip.decompress(data)
     return ET.fromstring(data)
@@ -161,24 +156,25 @@ def untranslated(c: ET.Element, tag: str) -> str | None:
 def flathub_frame(root: ET.Element) -> pl.DataFrame:
     rows = []
     for frow, c in enumerate(root.findall("component")):
-        if component_type(c) not in APP_TYPES:
+        ctype = component_type(c)
+        if ctype not in APP_TYPES:
             continue
         cid = c.findtext("id") or ""
         urls = {u.get("type"): u.text for u in c.findall("url")}
         name = untranslated(c, "name")
+        last = last_segment(cid)
+        home, vcs = url_key(urls.get("homepage")), url_key(urls.get("vcs-browser"))
         rows.append(
             {
                 "frow": frow,
                 "flathub_id": cid,
-                "type": component_type(c),
+                "type": ctype,
                 "id_key": id_key(cid),
-                "last_key": last_segment(cid),
+                "last_key": last,
                 "name_key": (name or "").casefold() or None,
-                "home_keys": sorted(
-                    {k for k in (url_key(urls.get("homepage")), url_key(urls.get("vcs-browser"))) if k}
-                ),
-                "vcs_key": url_key(urls.get("vcs-browser")),
-                "words": words(last_segment(cid), name),
+                "home_keys": sorted({k for k in (home, vcs) if k}),
+                "vcs_key": vcs,
+                "words": words(last, name),
                 "ref": c.findtext("bundle[@type='flatpak']"),
             }
         )
@@ -218,6 +214,7 @@ def ours_frame(root: ET.Element, packages: dict) -> pl.DataFrame:
         pkg = packages.get(attr, {})
         urls = {u.get("type"): u.text for u in c.findall("url")}
         cid = c.findtext("id")
+        pname = nix_pname(attr, pkg)
         rows.append(
             {
                 "row": row,
@@ -228,8 +225,8 @@ def ours_frame(root: ET.Element, packages: dict) -> pl.DataFrame:
                 "id_key": id_key(cid),
                 "home_key": url_key(urls.get("homepage")) or url_key(nix_homepage(pkg)),
                 "vcs_key": url_key(urls.get("vcs-browser")),
-                "pname": nix_pname(attr, pkg) or None,
-                "words": words(last_segment(cid), untranslated(c, "name"), nix_pname(attr, pkg)),
+                "pname": pname or None,
+                "words": words(last_segment(cid), untranslated(c, "name"), pname),
             }
         )
     return pl.DataFrame(rows, schema=OURS_SCHEMA)
@@ -530,7 +527,7 @@ def merge(root: ET.Element, fh_root: ET.Element, packages: dict, section: str, l
         summary = packages.get(c.findtext("pkgname") or "", {}).get("meta", {}).get("description")
         added = enrich(c, fh_comps[m["frow"]], summary if isinstance(summary, str) else None)
         if added:
-            mark_source(comps[r["row"]], m["flathub_id"], m["license"])
+            mark_source(c, m["flathub_id"], m["license"])
             enriched += 1
         for a in added:
             filled[a] = filled.get(a, 0) + 1
@@ -642,7 +639,7 @@ def cmd_describe(args: argparse.Namespace) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--flathub", default=FLATHUB_CATALOGUE, help="Flathub's catalogue: a path or URL")
+    p.add_argument("--flathub", required=True, help="Flathub's catalogue, as scripts/fetch-flathub.sh downloads it")
     sub = p.add_subparsers(dest="command", required=True)
     m = sub.add_parser("merge")
     m.add_argument("catalogue")

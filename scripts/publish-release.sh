@@ -3,10 +3,9 @@
 # completes a pass) as a GitHub release, and points appstream/sources.json at
 # it; default.nix fetches it from there. The release holds one tarball,
 # <section>.tar.gz, laid out as share/swcatalog/ is: xml/<section>.xml.gz and
-# icons/<section>/<size>/. Also drops the section's old copy in
-# appstream/<section>/ and all but the newest KEEP_RELEASES of its releases.
-# Leaves the changes staged for the caller to commit, and a line for each
-# section published in workspace/published.txt.
+# icons/<section>/<size>/. Also drops all but the newest KEEP_RELEASES of
+# the section's releases. Leaves the changes staged for the caller to commit,
+# and a line for each section published in workspace/published.txt.
 #
 # Needs gh with a token that can write contents, and GITHUB_REPOSITORY.
 set -euo pipefail
@@ -67,7 +66,6 @@ for dir in "$OUT"/*/; do
   rm -rf "$stage"
   mv "$MANIFEST.tmp" "$MANIFEST"
   git add "$MANIFEST"
-  git rm -rq --ignore-unmatch "appstream/$section"
   echo "$section: nixpkgs ${REV:0:12}" >> "$PUBLISHED"
 
   # This section's releases only: the tag is <section>-<date>-<time>, so
