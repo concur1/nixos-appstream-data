@@ -30,7 +30,6 @@ import json
 import os
 import re
 import sys
-import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -55,6 +54,8 @@ METADATA_LICENSES = {
 }  # fmt: skip
 # Names AppStream reads as SPDX IDs (as_spdx_license_tokenize_drop).
 LEGACY_LICENSES = {"CC0": "CC0-1.0", "CC-BY": "CC-BY-3.0", "CC-BY-SA": "CC-BY-SA-3.0", "GFDL": "GFDL-1.3"}
+
+OPERATORS = {"AND", "OR", "WITH"}
 
 # A bare forge host says nothing about which app it is.
 FORGES = {"github.com", "gitlab.com", "codeberg.org", "sourceforge.net", "bitbucket.org", "sr.ht"}
@@ -97,20 +98,23 @@ def license_allowed(expr: str | None) -> bool:
     """Whether an SPDX expression is a metadata licence, as appstreamcli
     validate decides it (as_license_is_metadata_license): one alternative
     of an OR will do, but every part of an AND must be one. Mixed or
-    bracketed expressions need every part, where AppStream gives up."""
+    bracketed expressions need every part, where AppStream gives up; a
+    malformed one (as "MIT OR") is none."""
     if not expr or "(" in expr or ")" in expr:
         return False
-    ops, ids = set(), []
-    for tok in expr.split():
-        if tok in ("AND", "and", "OR", "or"):
-            ops.add(tok.upper())
-        else:
-            # An exception after WITH is no metadata licence, nor is WITH.
-            tok = re.sub(r"(-only|-or-later|\+)$", "", tok)
-            ids.append(LEGACY_LICENSES.get(tok, tok) in METADATA_LICENSES)
-    if not ids:
+    tokens = expr.split()
+    operands, ops = tokens[0::2], [t.upper() for t in tokens[1::2]]
+    if len(tokens) % 2 == 0 or any(o not in OPERATORS for o in ops) or any(t.upper() in OPERATORS for t in operands):
         return False
-    return any(ids) if ops == {"OR"} else all(ids)
+    ok = [
+        LEGACY_LICENSES.get(t, t) in METADATA_LICENSES
+        for t in (re.sub(r"(-only|-or-later|\+)$", "", t) for t in operands)
+    ]
+    # A licence with an exception is no metadata licence.
+    for i, o in enumerate(ops):
+        if o == "WITH":
+            ok[i] = ok[i + 1] = False
+    return any(ok) if {o for o in ops if o != "WITH"} == {"OR"} else all(ok)
 
 
 # --- Catalogues --------------------------------------------------------------
@@ -118,9 +122,7 @@ def license_allowed(expr: str | None) -> bool:
 
 def read_catalogue(source: str) -> ET.Element:
     if re.match(r"https?://", source):
-        req = urllib.request.Request(source, headers={"User-Agent": "nixos-appstream-data"})
-        with urllib.request.urlopen(req, timeout=300) as r:
-            data = r.read()
+        data = ostree_metainfo.get(source, timeout=300)
     else:
         data = Path(source).read_bytes()
     if data[:2] == b"\x1f\x8b":
@@ -132,7 +134,7 @@ def write_catalogue(root: ET.Element, path: Path) -> None:
     buf = io.BytesIO()
     ET.ElementTree(root).write(buf, encoding="utf-8", xml_declaration=True)
     # No name or time in the header, so the same catalogue gives the same file.
-    path.write_bytes(gzip.compress(buf.getvalue(), mtime=0))
+    write_atomically(path, gzip.compress(buf.getvalue(), mtime=0))
 
 
 def words(*names: str | None) -> list[str]:
@@ -323,8 +325,10 @@ def match(ours: pl.DataFrame, flathub: pl.DataFrame, unique_ours: bool = True) -
 
 def metadata_licenses(refs: list[str], cache_path: Path | None) -> dict[str, str | None]:
     """Ref -> the metadata licence in its current commit's metainfo, or None.
-    Cached by commit, so a pass only reads apps rebuilt since the last one."""
-    cache = json.loads(cache_path.read_text()) if cache_path and cache_path.exists() else {}
+    Cached by commit, so a pass only reads apps rebuilt since the last one.
+    Raises OSError if Flathub can't be reached: the merge fails rather than
+    leave out the apps it couldn't read."""
+    cache = read_license_cache(cache_path) if cache_path else {}
     commits = ostree_metainfo.ref_commits()
 
     def lookup(ref: str) -> tuple[str, str | None]:
@@ -336,9 +340,8 @@ def metadata_licenses(refs: list[str], cache_path: Path | None) -> dict[str, str
             try:
                 data = ostree_metainfo.metainfo(ostree_metainfo.FLATHUB, commit, app_id)
                 lic = ET.fromstring(data).findtext("metadata_license") if data else None
-            except OSError as e:  # Not cached: tried again next time.
-                print(f"warning: no metainfo for {ref}: {e}", file=sys.stderr)
-                return ref, None
+            except OSError:  # Flathub not reachable: see above.
+                raise
             # Unreadable, which shouldn't stop the merge; the report lists it.
             except Exception as e:  # noqa: BLE001
                 print(f"warning: unreadable metainfo for {ref}: {e!r}", file=sys.stderr)
@@ -346,13 +349,41 @@ def metadata_licenses(refs: list[str], cache_path: Path | None) -> dict[str, str
             cache[commit] = (lic or "").strip()
         return ref, cache[commit] or None
 
-    with ThreadPoolExecutor(16) as pool:
-        result = dict(pool.map(lookup, refs))
-    if cache_path:
-        live = set(commits.values())
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps({k: v for k, v in sorted(cache.items()) if k in live}, indent=0))
-    return result
+    try:
+        with ThreadPoolExecutor(16) as pool:
+            return dict(pool.map(lookup, refs))
+    finally:
+        # What was read is kept even if the rest failed.
+        if cache_path:
+            live = set(commits.values())
+            write_atomically(cache_path, json.dumps({k: v for k, v in sorted(cache.items()) if k in live}, indent=0))
+
+
+def read_license_cache(path: Path) -> dict[str, str]:
+    """Commit -> licence, as metadata_licenses wrote it. A missing, cut-off
+    or otherwise broken file is an empty cache: it only costs reading the
+    licences again."""
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        print(f"warning: ignoring the licence cache {path}: {e}", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def write_atomically(path: Path, content: str | bytes) -> None:
+    """Replaces path, so a run cut off midway leaves the old file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    if isinstance(content, str):
+        tmp.write_text(content)
+    else:
+        tmp.write_bytes(content)
+    tmp.replace(path)
 
 
 # --- Enrichment --------------------------------------------------------------
@@ -483,7 +514,10 @@ def merge(root: ET.Element, fh_root: ET.Element, packages: dict, section: str, l
     licenses = licenses_for(sorted(r for r in matched["ref"].unique().to_list() if r))
     matched = matched.with_columns(
         pl.col("ref").replace_strict(licenses, default=None, return_dtype=pl.String).alias("license"),
-    ).with_columns(pl.col("license").map_elements(license_allowed, return_dtype=pl.Boolean).alias("allowed"))
+    ).with_columns(
+        # map_elements leaves out nulls (no licence found), which aren't allowed either.
+        pl.col("license").map_elements(license_allowed, return_dtype=pl.Boolean).fill_null(False).alias("allowed")
+    )
 
     filled: dict[str, int] = {}
     enriched = 0
@@ -537,19 +571,16 @@ def merge(root: ET.Element, fh_root: ET.Element, packages: dict, section: str, l
 def cmd_merge(args: argparse.Namespace) -> None:
     path = Path(args.catalogue)
     root = read_catalogue(str(path))
-    if args.flathub:
-        cache = Path(args.license_cache) if args.license_cache else None
-        lines = merge(
-            root,
-            read_catalogue(args.flathub),
-            load_packages(args.packages),
-            args.section,
-            lambda refs: metadata_licenses(refs, cache),
-        )
-        report(lines)
-    else:
-        root.set("origin", args.section)
+    cache = Path(args.license_cache) if args.license_cache else None
+    lines = merge(
+        root,
+        read_catalogue(args.flathub),
+        load_packages(args.packages),
+        args.section,
+        lambda refs: metadata_licenses(refs, cache),
+    )
     write_catalogue(root, path)
+    report(lines)
 
 
 def flathub_attrs(packages: dict, fh_root: ET.Element) -> list[str]:
@@ -604,18 +635,14 @@ def cmd_describe(args: argparse.Namespace) -> None:
     # A packages.json, or nix-env's output that one is made of.
     packages = data["packages"] if "version" in data else data
     pkids = describe(packages, read_catalogue(args.flathub))
-    tmp = path.with_name(path.name + ".describe")
-    tmp.write_text(json.dumps(data, separators=(",", ":")))
-    tmp.replace(path)
+    write_atomically(path, json.dumps(data, separators=(",", ":")))
     for pkid in pkids:
         print(pkid)
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument(
-        "--flathub", default=FLATHUB_CATALOGUE, help="Flathub's catalogue: a path or URL; empty to only set the origin"
-    )
+    p.add_argument("--flathub", default=FLATHUB_CATALOGUE, help="Flathub's catalogue: a path or URL")
     sub = p.add_subparsers(dest="command", required=True)
     m = sub.add_parser("merge")
     m.add_argument("catalogue")

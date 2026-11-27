@@ -1,11 +1,11 @@
-# The tests of the Python scripts, with the flake's Python and Polars.
+# The check suite of the Python scripts (AGENTS.md).
 name: Test scripts
 
 on:
   push:
-    paths: ["scripts/**", "tests/**", "flake.*", "pyproject.toml"]
+    paths: ["scripts/**", "tests/**", "pyproject.toml", "uv.lock"]
   pull_request:
-    paths: ["scripts/**", "tests/**", "flake.*", "pyproject.toml"]
+    paths: ["scripts/**", "tests/**", "pyproject.toml", "uv.lock"]
 
 permissions:
   contents: read
@@ -15,5 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
-      - run: nix shell .#python --command python3 -m unittest discover -v tests
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.10"
+          enable-cache: false
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run ty check
+      - run: uv run pytest -v

@@ -100,12 +100,11 @@ nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
   > "$BATCH.tmp"
 # Those that match a Flathub app and have no long description get their
 # summary as one (flathub_merge.py describe): otherwise the generator drops
-# the component of one without metainfo, as Firefox's. Without Flathub,
-# they go without for this pass.
-if ! python3 "$SCRIPTS/flathub_merge.py" describe "$BATCH.tmp" > "$PASS/batch-described.txt"; then
-  echo "::warning::Flathub not reachable; no stand-in descriptions for this batch."
-  : > "$PASS/batch-described.txt"
-fi
+# the component of one without metainfo, as Firefox's. Without Flathub the
+# batch fails, rather than leave them out.
+FLATHUB="$PASS/flathub.xml.gz"
+"$SCRIPTS/fetch-flathub.sh" "$FLATHUB"
+uv run "$SCRIPTS/flathub_merge.py" --flathub "$FLATHUB" describe "$BATCH.tmp" > "$PASS/batch-described.txt"
 mv "$BATCH.tmp" "$BATCH"
 
 # Only the old revisions' package lists go; the database keeps results for
@@ -206,8 +205,10 @@ cp "$EXPORT"/Components*.gz "$OUT"/
 cp "$EXPORT"/icons* "$OUT"/
 
 for f in "$OUT"/Components*.gz; do
-  "$SCRIPTS/merge-flathub.sh" "$f" "$SECTION" "$PKGROOT/packages.json"
+  "$SCRIPTS/merge-flathub.sh" "$f" "$SECTION" "$PKGROOT/packages.json" "$FLATHUB"
 done
+# For publish-release.sh, as the unfree catalogue can be of another.
+echo "$REV" > "$OUT/revision"
 
 (cd workspace && appstream-generator cleanup)
 

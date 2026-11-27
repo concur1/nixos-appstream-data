@@ -5,7 +5,8 @@
 # <section>.tar.gz, laid out as share/swcatalog/ is: xml/<section>.xml.gz and
 # icons/<section>/<size>/. Also drops the section's old copy in
 # appstream/<section>/ and all but the newest KEEP_RELEASES of its releases.
-# Leaves the changes staged for the caller to commit.
+# Leaves the changes staged for the caller to commit, and a line for each
+# section published in workspace/published.txt.
 #
 # Needs gh with a token that can write contents, and GITHUB_REPOSITORY.
 set -euo pipefail
@@ -17,14 +18,23 @@ KEEP_RELEASES="${KEEP_RELEASES:-10}"
 OUT=workspace/out
 MANIFEST=appstream/sources.json
 
+PUBLISHED=workspace/published.txt
+: > "$PUBLISHED"
 if ! compgen -G "$OUT/*/" > /dev/null; then
   echo "No catalogue in $OUT; nothing to publish."
   exit 0
 fi
-REV=$(cat workspace/last-pass)
 
 for dir in "$OUT"/*/; do
   section=$(basename "$dir")
+  # The nixpkgs revision it was made from (the unfree catalogue can be of an
+  # older one than the last pass). One without was left by a run from
+  # before, and published by it.
+  if [[ ! -f "${dir}revision" ]]; then
+    echo "Skipping $dir: no revision, so published already."
+    continue
+  fi
+  REV=$(cat "${dir}revision")
   tag="$section-$(date -u +%Y%m%d-%H%M%S)"
   base="https://github.com/$REPO/releases/download/$tag"
 
@@ -58,6 +68,7 @@ for dir in "$OUT"/*/; do
   mv "$MANIFEST.tmp" "$MANIFEST"
   git add "$MANIFEST"
   git rm -rq --ignore-unmatch "appstream/$section"
+  echo "$section: nixpkgs ${REV:0:12}" >> "$PUBLISHED"
 
   # This section's releases only: the tag is <section>-<date>-<time>, so
   # nixos-unstable doesn't take in nixos-unstable-unfree's.

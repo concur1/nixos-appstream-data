@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import gzip
 import struct
+import time
+import urllib.error
 import urllib.request
 import zlib
 
@@ -165,10 +167,22 @@ def _parse_tuple(members: list[str], data: bytes) -> tuple:
 FLATHUB = "https://dl.flathub.org/repo"
 
 
-def _get(url: str, timeout: float = 60) -> bytes:
+def get(url: str, timeout: float = 60, attempts: int = 3) -> bytes:
+    """The body at url. Network errors are tried again a few times, so a
+    brief one doesn't fail the run; one that lasts raises OSError."""
     req = urllib.request.Request(url, headers={"User-Agent": "nixos-appstream-data"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == attempts - 1:
+                raise
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+        time.sleep(2**attempt)
+    raise AssertionError("unreachable")
 
 
 def _object_url(repo: str, checksum: bytes | str, kind: str) -> str:
@@ -179,22 +193,22 @@ def _object_url(repo: str, checksum: bytes | str, kind: str) -> str:
 def ref_commits(repo: str = FLATHUB, arch: str = "x86_64") -> dict[str, str]:
     """Ref -> commit checksum, from the repo's per-arch summary (a fraction
     of the full one, which also lists every other arch)."""
-    idx = parse("(a{s(ayaaya{sv})}a{sv})", _get(f"{repo}/summary.idx"))
+    idx = parse("(a{s(ayaaya{sv})}a{sv})", get(f"{repo}/summary.idx"))
     subsummary = idx[0][arch][0].hex()
     summary = parse(
         "(a(s(taya{sv}))a{sv})",
-        gzip.decompress(_get(f"{repo}/summaries/{subsummary}.gz")),
+        gzip.decompress(get(f"{repo}/summaries/{subsummary}.gz")),
     )
     return {ref: data[1].hex() for ref, data in summary[0]}
 
 
 def _dirtree(repo: str, checksum: bytes) -> tuple[dict, dict]:
-    files, dirs = parse("(a(say)a(sayay))", _get(_object_url(repo, checksum, "dirtree")))
+    files, dirs = parse("(a(say)a(sayay))", get(_object_url(repo, checksum, "dirtree")))
     return dict(files), {name: tree for name, tree, _meta in dirs}
 
 
 def _file_content(repo: str, checksum: bytes) -> bytes:
-    data = _get(_object_url(repo, checksum, "filez"))
+    data = get(_object_url(repo, checksum, "filez"))
     # A big-endian header size and 4 bytes of padding, the header, then the
     # content as raw deflate.
     (hsize,) = struct.unpack(">I", data[:4])
@@ -206,7 +220,7 @@ def metainfo(repo: str, commit: str, app_id: str) -> bytes | None:
 
     flatpak-builder installs it as files/share/metainfo/<id>.metainfo.xml;
     older apps use share/appdata/ and .appdata.xml."""
-    root = parse("(a{sv}aya(say)sstayay)", _get(_object_url(repo, commit, "commit")))[6]
+    root = parse("(a{sv}aya(say)sstayay)", get(_object_url(repo, commit, "commit")))[6]
     tree = root
     for name in ("files", "share"):
         _files, dirs = _dirtree(repo, tree)

@@ -1,11 +1,10 @@
-# The Python scripts in scripts/ (flathub_merge.py). CI runs them with the
-# flake's `python` package; locally, uv runs them and the checks in
-# AGENTS.md.
+# The Python scripts in scripts/ (flathub_merge.py), run with uv, here and
+# in CI; AGENTS.md has the checks.
 [project]
 name = "nixos-appstream-data-scripts"
 version = "0"
 requires-python = ">=3.13"
-# Tested with 1.36 (the flake's nixpkgs), 1.42 and 2.2.
+# Tested with 1.36, 1.42 and 2.2; uv.lock has the one used.
 dependencies = ["polars>=1.36,<3"]
 
 [tool.uv]

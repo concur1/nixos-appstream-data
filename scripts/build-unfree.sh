@@ -35,6 +35,8 @@ nix-store --add-root "$UWS/nixpkgs" --realise "$NIXPKGS_PATH" > /dev/null
 
 PKGROOT="$UWS/cache/nixpkgs/$REV/x86_64-linux"
 UNFREE_PACKAGES="$UWS/unfree-packages.json"
+# One copy for the whole unfree pass, as for a free one.
+FLATHUB="$UWS/flathub.xml.gz"
 : > "$UWS/appstream-generator.log"
 
 summary() {
@@ -54,7 +56,7 @@ if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
     rm -f "$UWS/pending"
     exit 0
   fi
-  rm -f "$UWS"/{queue,done,failed}.txt
+  rm -f "$UWS"/{queue,done,failed}.txt "$FLATHUB"
   # Unfree attrs have no store paths in the pass's package list, as
   # packages-config.nix doesn't allow them; with allowUnfree they do.
   jq -r '.packages | to_entries[] | select(.value.outputs == null) | .key' \
@@ -62,8 +64,9 @@ if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
   nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
     --arg nixpkgsPath "$NIXPKGS_PATH" --arg attrsFile "$UWS/no-outputs.txt" --arg allowUnfree true \
     | jq -c '{version: 2, packages: .}' > "$UNFREE_PACKAGES"
-  python3 "$SCRIPTS/flathub_merge.py" describe "$UNFREE_PACKAGES" > /dev/null
-  python3 "$SCRIPTS/flathub_merge.py" select --packages "$UNFREE_PACKAGES" > "$UWS/queue.txt"
+  "$SCRIPTS/fetch-flathub.sh" "$FLATHUB"
+  uv run "$SCRIPTS/flathub_merge.py" --flathub "$FLATHUB" describe "$UNFREE_PACKAGES" > /dev/null
+  uv run "$SCRIPTS/flathub_merge.py" --flathub "$FLATHUB" select --packages "$UNFREE_PACKAGES" > "$UWS/queue.txt"
   touch "$UWS"/{done,failed}.txt
   echo "$REV" > "$UWS/rev"
 fi
@@ -222,9 +225,11 @@ OUT="$WS/out/$UNFREE"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$EXPORT"/Components*.gz "$EXPORT"/icons* "$OUT"/
+"$SCRIPTS/fetch-flathub.sh" "$FLATHUB"
 for f in "$OUT"/Components*.gz; do
-  "$SCRIPTS/merge-flathub.sh" "$f" "$UNFREE" "$UNFREE_PACKAGES"
+  "$SCRIPTS/merge-flathub.sh" "$f" "$UNFREE" "$UNFREE_PACKAGES" "$FLATHUB"
 done
+echo "$REV" > "$OUT/revision"
 asgen cleanup
 
 # Listings of store paths no longer in the list.

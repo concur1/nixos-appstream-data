@@ -53,6 +53,16 @@ jobs:
 
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
 
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.10"
+          # The Actions cache is for the workspace.
+          enable-cache: false
+
+      # actions/cache archives a listed directory whole, so the exclusions
+      # here and in "Save workspace" match nothing; the steps below see to
+      # what is saved. (Changing the list would change the cache version and
+      # lose every saved workspace.)
       - name: Restore workspace
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -62,14 +72,6 @@ jobs:
             !workspace/out
           key: asgen-workspace-${{ github.run_id }}
           restore-keys: asgen-workspace-
-
-      # actions/cache archives a listed directory whole, so the exclusions
-      # above (and below) match nothing, and the workspace comes back with
-      # the catalogues the last run left in out/, which it published.
-      # Changing the list would change the cache version and lose every
-      # saved workspace.
-      - name: Drop the last run's catalogues
-        run: rm -rf workspace/out workspace/narcache
 
       - name: Build batches
         # Stops early enough for the workspace to be saved: run-batches.sh
@@ -82,20 +84,8 @@ jobs:
           FORCE: ${{ inputs.force && '1' || '0' }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          nix shell --inputs-from . .#appstream-generator .#python nixpkgs#jq nixpkgs#expect \
+          nix shell --inputs-from . .#appstream-generator nixpkgs#jq nixpkgs#expect \
             --command scripts/run-batches.sh
-
-      - name: Save workspace
-        if: always()
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          # Archives of a batch that was cut off aren't worth the space, and
-          # a finished catalogue is published below.
-          path: |
-            workspace
-            !workspace/narcache
-            !workspace/out
-          key: asgen-workspace-${{ github.run_id }}
 
       - name: Upload generator log
         if: always()
@@ -107,8 +97,9 @@ jobs:
             workspace/unfree/appstream-generator.log
           if-no-files-found: ignore
 
-      # Only the run that completes a pass (or the unfree catalogue) leaves
-      # a catalogue in workspace/out/.
+      # A run that completes a pass or the unfree catalogue leaves it in
+      # workspace/out/, and so does one whose publishing failed: it is saved
+      # with the workspace and published by the next run.
       - name: Publish catalogue
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
@@ -118,15 +109,29 @@ jobs:
           # before, which may have committed sources.json since.
           git pull --ff-only
           scripts/publish-release.sh
-          if git diff --cached --quiet; then
-            echo "Pass not complete yet; nothing to commit."
-            exit 0
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" \
+                -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                commit -m "Update AppStream data ($(paste -sd ';' workspace/published.txt | sed 's/;/; /g'))"
+            git pull --rebase
+            git push
           fi
-          git -c user.name="github-actions[bot]" \
-              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -m "Update AppStream data (nixpkgs $(cat workspace/last-pass))"
-          git pull --rebase
-          git push
+          rm -rf workspace/out
+
+      # A batch that was cut off leaves its archives, not worth the space.
+      - name: Drop downloaded archives
+        if: always()
+        run: rm -rf workspace/narcache
+
+      - name: Save workspace
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            workspace
+            !workspace/narcache
+            !workspace/out
+          key: asgen-workspace-${{ github.run_id }}
 
       # A pass, or the unfree catalogue after it, not complete yet: go on
       # now rather than at the next scheduled run. A failed run doesn't, so
