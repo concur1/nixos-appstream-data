@@ -38,7 +38,7 @@ from pathlib import Path
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).parent))
-import ostree_metainfo  # noqa: E402
+import ostree_metainfo
 
 FLATHUB_CATALOGUE = "https://dl.flathub.org/repo/appstream/x86_64/appstream.xml.gz"
 
@@ -262,10 +262,16 @@ def candidates(ours: pl.DataFrame, flathub: pl.DataFrame) -> pl.DataFrame:
     # A homepage can be a developer's site for several apps, so the two
     # must also share a word of their names and not differ in repository.
     by_home = (
-        ours.join(flathub.explode("home_keys", empty_as_null=False).rename({"home_keys": "home_key"}), on=["home_key", "type"])
+        ours.join(
+            flathub.explode("home_keys", empty_as_null=False).rename({"home_keys": "home_key"}), on=["home_key", "type"]
+        )
         .filter(
             (pl.col("words").list.set_intersection(pl.col("words_right")).list.len() > 0)
-            & (pl.col("vcs_key").is_null() | pl.col("vcs_key_right").is_null() | (pl.col("vcs_key") == pl.col("vcs_key_right")))
+            & (
+                pl.col("vcs_key").is_null()
+                | pl.col("vcs_key_right").is_null()
+                | (pl.col("vcs_key") == pl.col("vcs_key_right"))
+            )
         )
         .select("key", "frow", pl.lit("homepage").alias("rule"))
     )
@@ -284,7 +290,9 @@ def match(ours: pl.DataFrame, flathub: pl.DataFrame, unique_ours: bool = True) -
     candidate and, with unique_ours, the only key for that Flathub app,
     counting apps already taken by a stronger rule."""
     cands = candidates(ours, flathub)
-    decided = pl.DataFrame(schema={"key": pl.String, "rule": pl.String, "status": pl.String, "frows": pl.List(pl.Int64)})
+    decided = pl.DataFrame(
+        schema={"key": pl.String, "rule": pl.String, "status": pl.String, "frows": pl.List(pl.Int64)}
+    )
     taken = pl.DataFrame(schema={"frow": pl.Int64})
     for rule in RULES:
         c = cands.filter(pl.col("rule") == rule).join(decided.select("key"), on="key", how="anti")
@@ -292,10 +300,10 @@ def match(ours: pl.DataFrame, flathub: pl.DataFrame, unique_ours: bool = True) -
             continue
         per_key = c.group_by("key").agg(pl.col("frow").unique().sort().alias("frows"))
         per_frow = c.group_by("frow").agg(pl.col("key").n_unique().alias("keys"))
-        per_frow = per_frow.with_columns(
-            pl.col("frow").is_in(taken["frow"].implode()).alias("taken")
+        per_frow = per_frow.with_columns(pl.col("frow").is_in(taken["frow"].implode()).alias("taken"))
+        bad = (
+            per_frow.filter((pl.col("keys") > 1) | pl.col("taken"))["frow"] if unique_ours else per_frow["frow"].clear()
         )
-        bad = per_frow.filter((pl.col("keys") > 1) | pl.col("taken"))["frow"] if unique_ours else per_frow["frow"].clear()
         status = per_key.with_columns(
             pl.lit(rule).alias("rule"),
             pl.when((pl.col("frows").list.len() == 1) & ~pl.col("frows").list.first().is_in(bad.implode()))
@@ -331,7 +339,8 @@ def metadata_licenses(refs: list[str], cache_path: Path | None) -> dict[str, str
             except OSError as e:  # Not cached: tried again next time.
                 print(f"warning: no metainfo for {ref}: {e}", file=sys.stderr)
                 return ref, None
-            except Exception as e:  # Unreadable; the report lists it as unlicensed.
+            # Unreadable, which shouldn't stop the merge; the report lists it.
+            except Exception as e:  # noqa: BLE001
                 print(f"warning: unreadable metainfo for {ref}: {e!r}", file=sys.stderr)
                 lic = None
             cache[commit] = (lic or "").strip()
@@ -510,8 +519,10 @@ def merge(root: ET.Element, fh_root: ET.Element, packages: dict, section: str, l
         f"{len(matched)} matched a Flathub app ("
         + ", ".join(f"{r['len']} by {r['rule']}" for r in by_rule.iter_rows(named=True))
         + f"), {len(ambiguous)} ambiguously, {len(unmatched)} not at all.",
-        f"{enriched} components got fields from Flathub; "
-        f"{len(rejected)} matches were skipped for their metadata licence.",
+        (
+            f"{enriched} components got fields from Flathub; "
+            f"{len(rejected)} matches were skipped for their metadata licence."
+        ),
         "",
         "| Field | Components |",
         "| --- | --- |",

@@ -39,11 +39,14 @@ components record the app and its licence in
 `<custom><value key="NixOS::flathub-id">` and
 `<value key="NixOS::flathub-metadata-license">`.
 
-The tests of the scripts:
+The checks of the scripts (see `AGENTS.md`):
 
 ```shell
-nix shell .#python --command python3 -m unittest discover tests
+uv run ruff format . && uv run ruff check . && uv run ty check && uv run pytest
 ```
+
+CI runs the tests with the flake's Python:
+`nix shell .#python --command python3 -m unittest discover tests`.
 
 # Licenses
 

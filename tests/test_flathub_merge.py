@@ -1,6 +1,6 @@
 """Fixture tests for scripts/flathub_merge.py and scripts/ostree_metainfo.py.
 
-  python3 -m unittest discover tests
+python3 -m unittest discover tests
 """
 
 import sys
@@ -9,8 +9,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-import flathub_merge as fm  # noqa: E402
-import ostree_metainfo as om  # noqa: E402
+import flathub_merge as fm
+import ostree_metainfo as om
 
 
 def catalogue(*components: str) -> ET.Element:
@@ -52,7 +52,9 @@ class Matching(unittest.TestCase):
 
     def test_homepage_normalised(self):
         m = matches(
-            catalogue(ours("app.desktop", "Tool", "tool", '\n  <url type="homepage">http://www.tool.org/index.html</url>')),
+            catalogue(
+                ours("app.desktop", "Tool", "tool", '\n  <url type="homepage">http://www.tool.org/index.html</url>')
+            ),
             catalogue(flathub("org.tool.Tool", "Tool", homepage="https://tool.org/")),
         )
         self.assertEqual(m["app"], ("matched", "homepage", ["org.tool.Tool"]))
@@ -60,7 +62,9 @@ class Matching(unittest.TestCase):
     def test_homepage_from_nix_meta_and_flathub_vcs(self):
         m = matches(
             catalogue(ours("tool.desktop", "Tool", "tool")),
-            catalogue(flathub("io.github.me.Tool", "Tool", homepage="https://tool.example", vcs="https://github.com/me/tool")),
+            catalogue(
+                flathub("io.github.me.Tool", "Tool", homepage="https://tool.example", vcs="https://github.com/me/tool")
+            ),
             {"tool": {"pname": "tool", "meta": {"homepage": "https://github.com/me/tool"}}},
         )
         self.assertEqual(m["tool"], ("matched", "homepage", ["io.github.me.Tool"]))
@@ -74,7 +78,9 @@ class Matching(unittest.TestCase):
 
     def test_homepage_shared_by_two_flathub_apps_is_ambiguous(self):
         m = matches(
-            catalogue(ours("viewer.desktop", "Suite Viewer", "suite", '\n  <url type="homepage">https://suite.org</url>')),
+            catalogue(
+                ours("viewer.desktop", "Suite Viewer", "suite", '\n  <url type="homepage">https://suite.org</url>')
+            ),
             catalogue(
                 flathub("org.suite.Viewer", "Suite Viewer", homepage="https://suite.org"),
                 flathub("org.suite.Editor", "Suite Editor", homepage="https://suite.org"),
@@ -85,7 +91,9 @@ class Matching(unittest.TestCase):
     def test_homepage_shared_by_two_of_our_apps_is_ambiguous(self):
         home = '\n  <url type="homepage">https://suite.org</url>'
         m = matches(
-            catalogue(ours("suite-a.desktop", "Suite A", "suite-a", home), ours("suite-b.desktop", "Suite B", "suite-b", home)),
+            catalogue(
+                ours("suite-a.desktop", "Suite A", "suite-a", home), ours("suite-b.desktop", "Suite B", "suite-b", home)
+            ),
             catalogue(flathub("org.suite.Suite", "Suite", homepage="https://suite.org")),
         )
         self.assertEqual(m["suite-a"][0], "ambiguous")
@@ -108,13 +116,22 @@ class Matching(unittest.TestCase):
         extra = '\n  <url type="homepage">https://dux.dev</url>\n  <url type="vcs-browser">https://github.com/dux/files</url>'
         m = matches(
             catalogue(ours("dev.dux.Files", "Dux Files", "dux-files", extra)),
-            catalogue(flathub("dev.dux.Calendar", "Dux Calendar", homepage="https://dux.dev", vcs="https://github.com/dux/calendar")),
+            catalogue(
+                flathub(
+                    "dev.dux.Calendar",
+                    "Dux Calendar",
+                    homepage="https://dux.dev",
+                    vcs="https://github.com/dux/calendar",
+                )
+            ),
         )
         self.assertNotIn("dev.dux.files", m)
 
     def test_name_rule_needs_id_segment_and_name(self):
         fh = catalogue(flathub("com.vendor.Discord", "Discord"), flathub("com.other.Slack", "Slack Desktop"))
-        m = matches(catalogue(ours("discord.desktop", "Discord", "discord"), ours("slack.desktop", "Slack", "slack")), fh)
+        m = matches(
+            catalogue(ours("discord.desktop", "Discord", "discord"), ours("slack.desktop", "Slack", "slack")), fh
+        )
         self.assertEqual(m["discord"], ("matched", "name", ["com.vendor.Discord"]))
         self.assertNotIn("slack", m)
 
@@ -123,7 +140,9 @@ class Matching(unittest.TestCase):
         m = matches(
             catalogue(
                 ours("org.tool.Tool", "Tool", "tool"),
-                ours("tool-extra.desktop", "Tool Extra", "tool-extra", '\n  <url type="homepage">https://tool.org</url>'),
+                ours(
+                    "tool-extra.desktop", "Tool Extra", "tool-extra", '\n  <url type="homepage">https://tool.org</url>'
+                ),
             ),
             catalogue(flathub("org.tool.Tool", "Tool", homepage="https://tool.org")),
         )
@@ -131,9 +150,7 @@ class Matching(unittest.TestCase):
         self.assertEqual(m["tool-extra"][0], "ambiguous")
 
     def test_only_apps_match(self):
-        fh = catalogue(
-            '<component type="runtime"><id>org.tool.Tool</id><name>Tool</name></component>'
-        )
+        fh = catalogue('<component type="runtime"><id>org.tool.Tool</id><name>Tool</name></component>')
         self.assertEqual(matches(catalogue(ours("org.tool.Tool", "Tool", "tool")), fh), {})
 
 
@@ -216,7 +233,7 @@ class Enrich(unittest.TestCase):
                 "org.tool.Tool",
                 "Tool",
                 "tool",
-                "\n  <description><p>Ours</p></description>\n  <url type=\"homepage\">https://tool.example</url>"
+                '\n  <description><p>Ours</p></description>\n  <url type="homepage">https://tool.example</url>'
                 '\n  <icon type="stock">tool</icon>\n  <releases><release version="1"/></releases>',
             )
         )
@@ -255,7 +272,7 @@ class Enrich(unittest.TestCase):
 
     def test_summary_as_description_is_replaced(self):
         # As the generator writes nix's summary given as longDescription.
-        desc = "\n  <description><p>A tool</p></description>\n  <description xml:lang=\"en\"><p>A tool</p></description>"
+        desc = '\n  <description><p>A tool</p></description>\n  <description xml:lang="en"><p>A tool</p></description>'
         root = catalogue(ours("tool.desktop", "Tool", "tool", desc))
         packages = {"tool": {"pname": "tool", "meta": {"description": "A tool", "homepage": "https://tool.org"}}}
         fm.merge(root, catalogue(self.THEIRS), packages, "s", lambda refs: {r: "CC0-1.0" for r in refs})

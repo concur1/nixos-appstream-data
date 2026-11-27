@@ -1,7 +1,6 @@
 # The Python scripts in scripts/ (flathub_merge.py). CI runs them with the
-# flake's `python` package; this is for running them, or the tests, with uv:
-#
-#   uv run python -m unittest discover tests
+# flake's `python` package; locally, uv runs them and the checks in
+# AGENTS.md.
 [project]
 name = "nixos-appstream-data-scripts"
 version = "0"
@@ -11,3 +10,21 @@ dependencies = ["polars>=1.36,<3"]
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+    "ty>=0.0.112",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ty.environment]
+python-version = "3.13"
+# The scripts import each other from their own directory, as the tests do.
+extra-paths = ["scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
