@@ -231,6 +231,28 @@ class Enrich(unittest.TestCase):
         root, _ = self.run_merge(ours("org.tool.Tool", "Tool", "tool"), license=None)
         self.assertIsNone(root.find("component/description"))
 
+    def test_summary_as_description_is_replaced(self):
+        # As the generator writes nix's summary given as longDescription.
+        desc = "\n  <description><p>A tool</p></description>\n  <description xml:lang=\"en\"><p>A tool</p></description>"
+        root = catalogue(ours("tool.desktop", "Tool", "tool", desc))
+        packages = {"tool": {"pname": "tool", "meta": {"description": "A tool", "homepage": "https://tool.org"}}}
+        fm.merge(root, catalogue(self.THEIRS), packages, "s", lambda refs: {r: "CC0-1.0" for r in refs})
+        c = root[0]
+        self.assertEqual([d.findtext("p") for d in c.findall("description")], ["From Flathub", "Von Flathub"])
+        self.assertTrue(all(e.tail == "\n  " for e in c[:-1]))
+
+    def test_real_description_is_kept(self):
+        desc = "\n  <description><p>A tool for things</p></description>"
+        root = catalogue(ours("tool.desktop", "Tool", "tool", desc))
+        packages = {"tool": {"pname": "tool", "meta": {"description": "A tool", "homepage": "https://tool.org"}}}
+        fm.merge(root, catalogue(self.THEIRS), packages, "s", lambda refs: {r: "CC0-1.0" for r in refs})
+        self.assertEqual([d.findtext("p") for d in root.findall("component/description")], ["A tool for things"])
+
+    def test_summary_kept_without_a_better_one(self):
+        c = ET.fromstring(ours("tool.desktop", "Tool", "tool", "\n  <description><p>A tool</p></description>"))
+        fm.enrich(c, ET.fromstring(flathub("org.tool.Tool", "Tool")), "A tool")
+        self.assertEqual([d.findtext("p") for d in c.findall("description")], ["A tool"])
+
     def test_keeps_indentation(self):
         root, _ = self.run_merge(ours("org.tool.Tool", "Tool", "tool"))
         c = root.find("component")

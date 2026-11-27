@@ -352,9 +352,31 @@ def _append(parent: ET.Element, el: ET.Element) -> None:
     parent.append(el)
 
 
-def enrich(ours: ET.Element, theirs: ET.Element) -> list[str]:
-    """Copies what `ours` lacks from `theirs`; returns what it added."""
+def _remove(parent: ET.Element, el: ET.Element) -> None:
+    i = list(parent).index(el)
+    if i == len(parent) - 1 and i > 0:
+        parent[i - 1].tail = el.tail
+    parent.remove(el)
+
+
+def is_summary_description(c: ET.Element, summary: str | None) -> bool:
+    """Whether the component's description is only nix's one-line summary.
+    build-unfree.sh gives the generator that as the long description of
+    packages without one, as it drops a component made from a .desktop
+    file alone if it has no description."""
+    descs = c.findall("description")
+    return bool(summary and descs) and all(
+        len(d) == 1 and d[0].tag == "p" and (d[0].text or "").strip() == summary.strip() for d in descs
+    )
+
+
+def enrich(ours: ET.Element, theirs: ET.Element, summary: str | None = None) -> list[str]:
+    """Copies what `ours` lacks from `theirs`; returns what it added. A
+    description that is only nix's `summary` counts as missing."""
     added = []
+    if theirs.find("description") is not None and is_summary_description(ours, summary):
+        for d in ours.findall("description"):
+            _remove(ours, d)
     for tag in FILL:
         if ours.find(tag) is None and theirs.find(tag) is not None:
             for el in theirs.findall(tag):
@@ -456,7 +478,9 @@ def merge(root: ET.Element, fh_root: ET.Element, packages: dict, section: str, l
         m = by_key.get(r["key"])
         if m is None:
             continue
-        added = enrich(comps[r["row"]], fh_comps[m["frow"]])
+        c = comps[r["row"]]
+        summary = packages.get(c.findtext("pkgname") or "", {}).get("meta", {}).get("description")
+        added = enrich(c, fh_comps[m["frow"]], summary if isinstance(summary, str) else None)
         if added:
             mark_source(comps[r["row"]], m["flathub_id"], m["license"])
             enriched += 1

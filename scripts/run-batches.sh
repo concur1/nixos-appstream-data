@@ -25,11 +25,21 @@ unfree() {
   DEADLINE=$DEADLINE scripts/build-unfree.sh
 }
 
-# A workspace from before the unfree catalogue was built this way.
+# Bumped when the unfree catalogue has to be made afresh: the generator's
+# results for packages it already has stay otherwise. 2: descriptions for
+# packages without one, and symlinked .desktop directories.
+UNFREE_FORMAT=2
+if [[ -d "$WS/unfree" && "$(cat "$WS/unfree/format" 2> /dev/null)" != "$UNFREE_FORMAT" ]]; then
+  rm -rf "$WS/unfree"
+fi
+# For the last pass, if there's no unfree catalogue for it (as after the
+# above).
 if [[ -f "$WS/last-pass" && ! -f "$WS/batch-state" && ! -f "$WS/unfree/rev" ]]; then
   mkdir -p "$WS/unfree"
   cp "$WS/last-pass" "$WS/unfree/pending"
 fi
+mkdir -p "$WS/unfree"
+echo "$UNFREE_FORMAT" > "$WS/unfree/format"
 unfree
 if [[ -f "$WS/unfree/pending" ]]; then
   echo "Unfree catalogue not complete yet; it goes on next run."

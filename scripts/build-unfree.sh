@@ -44,7 +44,10 @@ summary() {
   fi
 }
 
-# A new unfree pass: what to build.
+# A new unfree pass: what to build. The generator drops a component made
+# from a .desktop file alone if the package has no long description, as most
+# unfree ones don't; their summary stands in, and the Flathub merge replaces
+# it with the app's own description.
 if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
   PASS_PACKAGES="$WS/cache/nixpkgs/$REV/x86_64-linux/packages.json"
   if [[ ! -f "$PASS_PACKAGES" ]]; then
@@ -60,7 +63,8 @@ if [[ "$(cat "$UWS/rev" 2> /dev/null)" != "$REV" ]]; then
     "$PASS_PACKAGES" > "$UWS/no-outputs.txt"
   nix-env -qaP --out-path --meta --json --file "$SCRIPTS/batch.nix" \
     --arg nixpkgsPath "$NIXPKGS_PATH" --arg attrsFile "$UWS/no-outputs.txt" --arg allowUnfree true \
-    | jq -c '{version: 2, packages: .}' > "$UNFREE_PACKAGES"
+    | jq -c '{version: 2, packages: map_values(if .meta.description then .meta.longDescription //= .meta.description else . end)}' \
+    > "$UNFREE_PACKAGES"
   python3 "$SCRIPTS/flathub_merge.py" select --packages "$UNFREE_PACKAGES" > "$UWS/queue.txt"
   touch "$UWS"/{done,failed}.txt
   echo "$REV" > "$UWS/rev"
@@ -89,6 +93,25 @@ listed() {
   local f
   for f in $(listings "$1"); do
     [[ -s "$f" ]] && ! grep -qxF '{}' "$f" || return 1
+  done
+}
+
+# The generator lists the target of a symlinked share/ or share/applications/
+# each time it reads the package list (nixindexutils.cpp), and once garbage
+# collected, or on the next runner, the target is gone and so is the
+# package. So the listing of attr $1 gets the target's contents in place of
+# the link, while it is still here.
+inline_links() {
+  local f key target
+  for f in $(listings "$1"); do
+    for key in .entries.share .entries.share.entries.applications; do
+      target=$(jq -r "$key | select(.type? == \"symlink\") | .target" "$f")
+      [[ "$target" == /nix/store/* ]] || continue
+      nix store ls --store auto --recursive --json "$target" > "$f.target"
+      jq --slurpfile t "$f.target" "$key = (\$t[0] + {type: \"directory\"})" "$f" > "$f.tmp"
+      mv "$f.tmp" "$f"
+      rm -f "$f.target"
+    done
   done
 }
 
@@ -163,6 +186,7 @@ for attr in "${QUEUE[@]}"; do
   write_packages "$attr"
   asgen process nixpkgs
   if listed "$attr"; then
+    inline_links "$attr"
     echo "$attr" >> "$UWS/done.txt"
     built=$(( built + 1 ))
   else

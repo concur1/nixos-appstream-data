@@ -61,6 +61,14 @@ jobs:
           key: asgen-workspace-${{ github.run_id }}
           restore-keys: asgen-workspace-
 
+      # actions/cache archives a listed directory whole, so the exclusions
+      # above (and below) match nothing, and the workspace comes back with
+      # the catalogues the last run left in out/, which it published.
+      # Changing the list would change the cache version and lose every
+      # saved workspace.
+      - name: Drop the last run's catalogues
+        run: rm -rf workspace/out workspace/narcache
+
       - name: Build batches
         # Stops early enough for the workspace to be saved: run-batches.sh
         # starts no batch it doesn't expect to finish within TIME_BUDGET
@@ -104,6 +112,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The run may be on an older commit than main: it waits for the one
+          # before, which may have committed sources.json since.
+          git pull --ff-only
           scripts/publish-release.sh
           if git diff --cached --quiet; then
             echo "Pass not complete yet; nothing to commit."
