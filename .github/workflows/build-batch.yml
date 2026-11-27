@@ -1,147 +1,65 @@
-# Runs scripts/build-batch.sh batch after batch (scripts/run-batches.sh) for
-# as long as a job may run, and publishes the catalogue as a release when a
-# pass over nixpkgs completes (scripts/publish-release.sh). The unfree
-# catalogue (scripts/build-unfree.sh) follows each pass, and is published
-# the same way. Only appstream/sources.json, which points at the releases,
-# is committed.
-#
-# State between runs is workspace/, kept in the Actions cache. Each run saves
-# a new entry and restores the newest, so a run that is cut off still keeps
-# what it finished.
+# Debug branch only: runs scripts/debug-batch.sh on a few packages instead of
+# a pass, to see why the generator gives some of them no component. Touches
+# neither the workspace cache nor the releases.
 name: Build AppStream data (batches)
 
 on:
-  schedule:
-    # About 26,000 apps and tools: a pass is 13 batches of 2,000, over one
-    # or more runs. A run with nothing to do (the channel hasn't moved since
-    # the last pass) stops after checking; one that leaves work unfinished
-    # starts the next (the last step), so a day is only between passes.
-    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
-      batch_size:
-        description: Attrs per batch
-        default: "2000"
-      force:
-        description: Start a new pass even if the channel hasn't moved
-        type: boolean
-        default: false
+      attrs:
+        description: Attrs to process, space-separated
+        default: >-
+          firefox firefox-esr librewolf ghidra helix kdePackages.konsole
+          kdePackages.kcalc audacity abiword
 
-# One run at a time: runs share workspace/.
 concurrency:
-  group: appstream-batches
+  group: appstream-debug
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  # For the cache usage in build-batch.sh's progress summary, and to start
-  # the next run.
-  actions: write
+  contents: read
 
 jobs:
-  batch:
+  debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # The runner's preinstalled toolchains take about 30 GB.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
-          df -h /
 
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
 
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.10"
-          # The Actions cache is for the workspace.
           enable-cache: false
 
-      # actions/cache archives a listed directory whole, so the exclusions
-      # here and in "Save workspace" match nothing; the steps below see to
-      # what is saved. (Changing the list would change the cache version and
-      # lose every saved workspace.)
-      - name: Restore workspace
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            workspace
-            !workspace/narcache
-            !workspace/out
-          key: asgen-workspace-${{ github.run_id }}
-          restore-keys: asgen-workspace-
-
-      - name: Build batches
-        # Stops early enough for the workspace to be saved: run-batches.sh
-        # starts no batch it doesn't expect to finish within TIME_BUDGET
-        # seconds, and the timeout catches one that runs long.
-        timeout-minutes: 330
+      - name: Process the packages
         env:
-          BATCH_SIZE: ${{ inputs.batch_size || '2000' }}
-          TIME_BUDGET: "17400"
-          FORCE: ${{ inputs.force && '1' || '0' }}
-          GH_TOKEN: ${{ github.token }}
+          ATTRS: ${{ inputs.attrs }}
+          DEBUG_WS: ${{ runner.temp }}/asgen-debug
         run: |
+          # shellcheck disable=SC2086 # one attr per word
           nix shell --inputs-from . .#appstream-generator nixpkgs#jq nixpkgs#expect \
-            --command scripts/run-batches.sh
+            --command scripts/debug-batch.sh $ATTRS 2>&1 | tee "$RUNNER_TEMP/debug.txt"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### Hints'
+              echo '```json'
+              sed -n '/^== Hints, by package/,/^== Components/p' "$RUNNER_TEMP/debug.txt" | sed '1d;$d'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: Upload generator log
+      - name: Upload the debug workspace
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: appstream-generator-log
+          name: generator-debug
           path: |
-            workspace/appstream-generator.log
-            workspace/unfree/appstream-generator.log
-          if-no-files-found: ignore
-
-      # A run that completes a pass or the unfree catalogue leaves it in
-      # workspace/out/, and so does one whose publishing failed: it is saved
-      # with the workspace and published by the next run.
-      - name: Publish catalogue
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # The run may be on an older commit than main: it waits for the one
-          # before, which may have committed sources.json since.
-          git pull --ff-only
-          scripts/publish-release.sh
-          if ! git diff --cached --quiet; then
-            git -c user.name="github-actions[bot]" \
-                -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-                commit -m "Update AppStream data ($(paste -sd ';' workspace/published.txt | sed 's/;/; /g'))"
-            git pull --rebase
-            git push
-          fi
-          rm -rf workspace/out
-
-      # A batch that was cut off leaves its archives, not worth the space.
-      - name: Drop downloaded archives
-        if: always()
-        run: rm -rf workspace/narcache
-
-      - name: Save workspace
-        if: always()
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            workspace
-            !workspace/narcache
-            !workspace/out
-          key: asgen-workspace-${{ github.run_id }}
-
-      # A pass, or the unfree catalogue after it, not complete yet: go on
-      # now rather than at the next scheduled run. A failed run doesn't, so
-      # a failure can't repeat run after run.
-      - name: Start the next run
-        if: success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [[ -f workspace/batch-state || -f workspace/unfree/pending ]]; then
-            gh workflow run build-batch.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}" \
-              -f batch_size="${{ inputs.batch_size || '2000' }}"
-          fi
+            ${{ runner.temp }}/debug.txt
+            ${{ runner.temp }}/asgen-debug/appstream-generator.log
+            ${{ runner.temp }}/asgen-debug/export/hints
+            ${{ runner.temp }}/asgen-debug/export/data
+            ${{ runner.temp }}/asgen-debug/nix-index
+            ${{ runner.temp }}/asgen-debug/cache/nixpkgs
+          if-no-files-found: warn
