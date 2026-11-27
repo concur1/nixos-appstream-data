@@ -17,8 +17,11 @@ nix build .#appstream-data-all
 ```
 
 The catalogues are built by the `Build AppStream data (batches)` workflow and
-published as GitHub release assets; `appstream/sources.json` points at the
-current release of each section, and the builds above fetch from there.
+published as GitHub releases, one per section, holding `<section>.tar.gz`:
+the `share/swcatalog/` tree (`xml/<section>.xml.gz` and
+`icons/<section>/<size>/`) that software centres read.
+`appstream/sources.json` points at the current release of each section, and
+the builds above fetch from there.
 
 The unfree catalogue covers the unfree packages that match an app on
 Flathub: Hydra doesn't build them, so the workflow does, one at a time.

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Publishes each catalogue in workspace/out/<section>/ (left by the run that
 # completes a pass) as a GitHub release, and points appstream/sources.json at
-# its files; default.nix fetches them from there. Also drops the section's
-# old copy in appstream/<section>/ and all but the newest KEEP_RELEASES of
-# its releases. Leaves the changes staged for the caller to commit.
+# it; default.nix fetches it from there. The release holds one tarball,
+# <section>.tar.gz, laid out as share/swcatalog/ is: xml/<section>.xml.gz and
+# icons/<section>/<size>/. Also drops the section's old copy in
+# appstream/<section>/ and all but the newest KEEP_RELEASES of its releases.
+# Leaves the changes staged for the caller to commit.
 #
 # Needs gh with a token that can write contents, and GITHUB_REPOSITORY.
 set -euo pipefail
@@ -26,27 +28,33 @@ for dir in "$OUT"/*/; do
   tag="$section-$(date -u +%Y%m%d-%H%M%S)"
   base="https://github.com/$REPO/releases/download/$tag"
 
-  # Release assets are named <section>.<file>, without "@" (as in
-  # icons-64x64@2.tar.gz), which isn't safe in asset names.
-  stage=$(mktemp -d)
-  files='{}'
-  for f in "$dir"*; do
-    name=$(basename "$f")
-    asset="$section.${name//@/-at-}"
-    cp "$f" "$stage/$asset"
-    files=$(jq --arg name "$name" --arg url "$base/$asset" \
-      --arg hash "$(nix-hash --flat --type sha256 --sri "$f")" \
-      '.[$name] = {url: $url, hash: $hash}' <<< "$files")
+  # The catalogue's origin is the section, and software centres look for
+  # its icons under icons/<origin>/.
+  tree=$(mktemp -d)
+  mkdir -p "$tree/xml" "$tree/icons/$section"
+  cp "$dir"Components-x86_64-linux.xml.gz "$tree/xml/$section.xml.gz"
+  for f in "$dir"icons-*.tar.gz; do
+    [[ -e "$f" ]] || continue
+    size=$(basename "$f" .tar.gz)
+    mkdir -p "$tree/icons/$section/${size#icons-}"
+    tar -xzf "$f" -C "$tree/icons/$section/${size#icons-}"
   done
+  stage=$(mktemp -d)
+  tarball="$stage/$section.tar.gz"
+  # The same catalogue makes the same file.
+  tar -C "$tree" -c --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 . \
+    | gzip -9n > "$tarball"
+  rm -rf "$tree"
 
-  gh release create "$tag" "$stage"/* --repo "$REPO" \
+  gh release create "$tag" "$tarball" --repo "$REPO" \
     --title "$section: nixpkgs ${REV:0:12}" \
     --notes "AppStream catalogue for $section, from nixpkgs $REV."
-  rm -rf "$stage"
 
   [[ -f "$MANIFEST" ]] || echo '{}' > "$MANIFEST"
-  jq --arg section "$section" --arg tag "$tag" --arg rev "$REV" --argjson files "$files" \
-    '.[$section] = {release: $tag, revision: $rev, files: $files}' "$MANIFEST" > "$MANIFEST.tmp"
+  jq --arg section "$section" --arg tag "$tag" --arg rev "$REV" \
+    --arg url "$base/$section.tar.gz" --arg hash "$(nix-hash --flat --type sha256 --sri "$tarball")" \
+    '.[$section] = {release: $tag, revision: $rev, url: $url, hash: $hash}' "$MANIFEST" > "$MANIFEST.tmp"
+  rm -rf "$stage"
   mv "$MANIFEST.tmp" "$MANIFEST"
   git add "$MANIFEST"
   git rm -rq --ignore-unmatch "appstream/$section"
