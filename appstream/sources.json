@@ -1,9 +1,9 @@
 {
   "nixos-unstable": {
-    "release": "nixos-unstable-20261127-170103",
+    "release": "nixos-unstable-20261128-012746",
     "revision": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
-    "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261127-170103/nixos-unstable.tar.gz",
-    "hash": "sha256-zD4I18ITSPR0qgXT6ZH2JUeCz/lCicEB2OVw9SkJAgA="
+    "url": "https://github.com/concur1/nixos-appstream-data/releases/download/nixos-unstable-20261128-012746/nixos-unstable.tar.gz",
+    "hash": "sha256-Bpn4QuEw+Nl9MuEC3hHG2MKUez0cvoScZXx882i+ii0="
   },
   "nixos-unstable-unfree": {
     "release": "nixos-unstable-unfree-20261128-005243",
